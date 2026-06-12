@@ -838,6 +838,10 @@ public buyMenu(id, iType)
         case MENU_SCALE:  { menuScale(id, iMenu);   format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_SCALE"); }
     }
 
+    if ( menu_pages(iMenu) > 1 )
+        format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_MENU_TITLE_PAGE")
+
+    menu_setprop(iMenu, MPROP_TITLE, szData)
     menu_setprop(iMenu, MPROP_EXIT, MEXIT_ALL)
     menu_setprop(iMenu, MPROP_NUMBER_COLOR, "\r")
 
@@ -1668,6 +1672,7 @@ public saveData(id)
     fclose(iFile)
 
     buySound(id, SOUND_MENU_NAV)
+    buyMenu(id, MENU_ROOT)
     return PLUGIN_HANDLED
 }
 

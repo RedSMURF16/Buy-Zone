@@ -44,6 +44,7 @@ BUY_INCREASE                        = \y[INCREASE]
 BUY_DECREASE                        = \r[DECREASE]
 
 BUY_MENU_TITLE                      = \dBuy Zone - Version \y%s
+BUY_MENU_TITLE_PAGE                 = \yPage:\r
 
 BUY_ROOT_CREATE                     = Create Buy Zone
 BUY_ROOT_STATUS                     = Status Buy Zone
