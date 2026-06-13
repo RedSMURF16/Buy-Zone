@@ -1919,7 +1919,7 @@ stock iconRefresh()
 
 public buyTrace(eBuy[BUY], id)
 {
-    new Float:fVec1[3]
+    new Float:fVec1[3], Float:fVec2[3]
 
     pev(id, pev_origin, eBuy[BUY_ORIGIN])
     pev(id, pev_view_ofs, fVec1)
