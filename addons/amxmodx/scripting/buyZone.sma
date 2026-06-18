@@ -26,6 +26,7 @@
 *             Added noclip for players placing buy zones for easier positioning
 *       v1.2: Bug fixes and config improvements.
 *       v1.3: Added per-Buy Zone configuration.
+*       v1.4: added FLAG_ACTIVE_DURATION, improved round-start logic.
 *
 */
 
@@ -68,7 +69,7 @@
 #define BUY_ICON_OWNER      pev_iuser1
 #define BUY_ARRAY_ITEM      pev_iuser1
 
-new const PLUGIN_VERSION[]       = "1.3"
+new const PLUGIN_VERSION[]       = "1.4"
 new const Float:DELAY_ON_CONNECT = 1.0
 new const ERROR_FILE[]           = "BuyZone_ERRORS.log"
 
@@ -87,12 +88,13 @@ enum
 
 enum
 {
-    FLAG_RADAR          = (1 << 0),
-    FLAG_ICON           = (1 << 1),
-    FLAG_ACTIVE_DELAY   = (1 << 2),
+    FLAG_RADAR              = (1 << 0),
+    FLAG_ICON               = (1 << 1),
+    FLAG_ACTIVE_DELAY       = (1 << 2),
+    FLAG_ACTIVE_DURATION    = (1 << 3),
 
-    FLAG_SELECT         = (1 << 3),
-    FLAG_ACTIVE         = (1 << 4)
+    FLAG_SELECT             = (1 << 4),
+    FLAG_ACTIVE             = (1 << 5)
 }
 
 enum
@@ -558,7 +560,7 @@ ReadFile()
                         if ( equali(szKey, "SETTING_DEFAULT_FLAGS") )
                         {
                             g_eSettings[SETTING_DEFAULT_FLAGS] = read_flags(szValue)
-                            g_eSettings[SETTING_DEFAULT_FLAGS] &= 7
+                            g_eSettings[SETTING_DEFAULT_FLAGS] &= 15
                         }
                         else if ( equali(szKey, "SETTING_DEFAULT_TEAM") )
                         {
@@ -718,7 +720,7 @@ ReadFile()
                         if ( equali(szKey, "BUY_FLAGS") )
                         {
                             eBuy[BUY_FLAGS] = read_flags(szValue)
-                            eBuy[BUY_FLAGS] &= 7
+                            eBuy[BUY_FLAGS] &= 15
                         }
                         else if ( equali(szKey, "BUY_RADAR") )
                         {
@@ -1540,7 +1542,10 @@ public buyTask()
             {
                 eBuy[BUY_FLAGS] |= FLAG_ACTIVE
                 eBuy[BUY_NEXT_ENABLE] = 0.0
-                eBuy[BUY_NEXT_DISABLE] = fCurrentTime + random_float(eBuy[BUY_ACTIVE_DURATION][0], eBuy[BUY_ACTIVE_DURATION][1])
+
+                if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DURATION )
+                    eBuy[BUY_NEXT_DISABLE] = fCurrentTime + random_float(eBuy[BUY_ACTIVE_DURATION][0], eBuy[BUY_ACTIVE_DURATION][1])
+
                 ArraySetArray(g_aBuy, i, eBuy)
 
                 iconRefresh()
@@ -1919,7 +1924,7 @@ stock iconRefresh()
 
 public buyTrace(eBuy[BUY], id)
 {
-    new Float:fVec1[3], Float:fVec2[3]
+    new Float:fVec1[3]
 
     pev(id, pev_origin, eBuy[BUY_ORIGIN])
     pev(id, pev_view_ofs, fVec1)
@@ -2134,7 +2139,11 @@ stock buyReset(eBuy[BUY])
     eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
     eBuy[BUY_NEXT_RADAR] = 0.0
     eBuy[BUY_NEXT_ENABLE] = 0.0
-    eBuy[BUY_NEXT_DISABLE] = 0.0
+
+    if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DURATION )
+        eBuy[BUY_NEXT_DISABLE] = get_gametime() + random_float(eBuy[BUY_ACTIVE_DURATION][0], eBuy[BUY_ACTIVE_DURATION][1])
+    else
+        eBuy[BUY_NEXT_DISABLE] = 0.0
 }
 
 stock buySound(iEnt, iSound, iChan = CHAN_ITEM, bool:bPlayer = true, iFlags = 0, iPitch = PITCH_NORM)
