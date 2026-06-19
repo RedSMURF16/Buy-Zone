@@ -47,10 +47,6 @@
     #define MAX_VALUE_LENGTH 64
 #endif
 
-#if !defined MAX_AUTHID_LENGTH
-    #define MAX_AUTHID_LENGTH 64
-#endif
-
 #if !defined MAX_RESOURCE_PATH_LENGTH
     #define MAX_RESOURCE_PATH_LENGTH 128
 #endif
@@ -131,9 +127,9 @@ enum _:MAIN_SETTINGS
     Float:SETTING_DEFAULT_ACTIVE_DELAY[2],
     Float:SETTING_DEFAULT_ACTIVE_DURATION[2],
     Float:SETTING_DEFAULT_ACTIVE_COOLDOWN[2],
-    SETTING_DEFAULT_ICON[MAX_RESOURCE_PATH_LENGTH],
     Float:SETTING_DEFAULT_ICON_SCALE,
     SETTING_DEFAULT_ICON_ALPHA,
+    SETTING_DEFAULT_ICON_SPRITE[MAX_RESOURCE_PATH_LENGTH],
 
     bool:SETTING_BUY_LOAD,
     bool:SETTING_BUY_DEFAULT,
@@ -278,7 +274,7 @@ new g_szMenuHandler[][] =
 }
 
 new Float:g_fScaleFactor[] = {5.0, 10.0, 20.0, 30.0, 45.0, 60.0}
-new g_szCN[][] = {"buyzone", "buyzone_icon"}
+new g_szCN[] = "buyzone"
 
 new Array:g_aBuy,
     Array:g_aBuyConfig,
@@ -507,7 +503,7 @@ ReadFile()
                             ArrayPushArray(g_aBuyConfig, eBuy)
 
                         copy(eBuy[BUY_NAME], charsmax(eBuy[BUY_NAME]), szData)
-                        copy(eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]), g_eSettings[SETTING_DEFAULT_ICON])
+                        copy(eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]), g_eSettings[SETTING_DEFAULT_ICON_SPRITE])
                         eBuy[BUY_FLAGS]               = g_eSettings[SETTING_DEFAULT_FLAGS]
                         eBuy[BUY_TEAM]                = g_eSettings[SETTING_DEFAULT_TEAM]
                         eBuy[BUY_RADAR]               = g_eSettings[SETTING_DEFAULT_RADAR]
@@ -594,9 +590,9 @@ ReadFile()
                             g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN][0] = str_to_float(szKey)
                             g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN][1] = str_to_float(szValue)
                         }
-                        else if ( equali(szKey, "SETTING_DEFAULT_ICON") )
+                        else if ( equali(szKey, "SETTING_DEFAULT_ICON_SPRITE") )
                         {
-                            copy(g_eSettings[SETTING_DEFAULT_ICON], charsmax(g_eSettings[SETTING_DEFAULT_ICON]), szValue)
+                            copy(g_eSettings[SETTING_DEFAULT_ICON_SPRITE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SPRITE]), szValue)
                             if ( !g_bFileWasRead ) precache_model(szValue)
                         }
                         else if ( equali(szKey, "SETTING_DEFAULT_ICON_SCALE") )
@@ -1562,13 +1558,14 @@ stock iconCreate(eBuy[BUY], Float:fOrigin[3])
     if ( !pev_valid(iEnt) )
         return 0
 
-    new iColor[3]
+    new iColor[3], szCN[32]
     if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE ) for ( new i = 0; i < 3; i ++ ) iColor[i] = g_eSettings[SETTING_COLOR_ACTIVE][i]
     else                                 for ( new i = 0; i < 3; i ++ ) iColor[i] = g_eSettings[SETTING_COLOR_INACTIVE][i]
 
+    formatex(szCN, charsmax(szCN), "%s_icon", g_szCN)
     set_pev(iEnt, BUY_ICON_OWNER, eBuy[BUY_ID])
     set_pev(iEnt, pev_impulse, BUY_ICON_KEY)
-    set_pev(iEnt, pev_classname, g_szCN[CLASS_BUYZONE_ICON])
+    set_pev(iEnt, pev_classname, szCN)
     set_pev(iEnt, pev_origin, fOrigin)
     engfunc(EngFunc_SetModel, iEnt, eBuy[BUY_ICON_SPRITE])
 
@@ -1603,7 +1600,7 @@ public buyCreate(id, iItem)
 
     set_pev(iEnt, BUY_ARRAY_ITEM, g_iBuy)
     set_pev(iEnt, pev_impulse, BUY_KEY)
-    set_pev(iEnt, pev_classname, g_szCN[CLASS_BUYZONE])
+    set_pev(iEnt, pev_classname, g_szCN)
 
     ArrayPushArray(g_aBuy, eBuy)
     g_iBuy ++
