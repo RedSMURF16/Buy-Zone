@@ -3,8 +3,6 @@ BUY_CHAT_TAG                        = ^4[BUY ZONE]^1
 BUY_CHAT_LIMIT                      = You've reached the maximum number of Buy Zones ^4%d
 BUY_CHAT_NO_BUY                     = There are no Buy Zones available
 BUY_CHAT_NO_DATA                    = Buy Zones data hasn't been found
-BUY_CHAT_NO_DEFAULT                 = There are no default Buy Zones on this map
-BUY_CHAT_NO_PLACE                   = You can't place Buy Zones on this map
 BUY_CHAT_CREATE_NEW                 = ^3%s ^1created
 BUY_CHAT_STATUS_CURRENT             = ^3%s ^1is %L
 BUY_CHAT_STATUS_ALL_ENABLED         = All Buy Zones are now enabled
@@ -48,7 +46,7 @@ BUY_MENU_TITLE_PAGE                 = \yPage:\r
 
 BUY_ROOT_CREATE                     = Create Buy Zone
 BUY_ROOT_STATUS                     = Status Buy Zone
-BUY_ROOT_TEAM                       = Team Buy Zone
+BUY_ROOT_TEAM                       = Team settings
 BUY_ROOT_REMOVE                     = Remove Buy Zone
 BUY_ROOT_SAVE                       = Save Data
 BUY_ROOT_NOCLIP                     = Status noclip %L
