@@ -146,11 +146,10 @@ enum _:MAIN_SETTINGS
 
     bool:SETTING_BUY_LOAD,
     bool:SETTING_BUY_DEFAULT,
+    Float:SETTING_BUY_CHECK,
     Float:SETTING_OFFSET_BASE,
     Float:SETTING_OFFSET[2],
     Float:SETTING_OFFSET_STEP,
-    Float:SETTING_OFFSET_FREQ,
-    Float:SETTING_GHOST_FREQ,
 
     Float:SETTING_SIZE_BASE,
     Float:SETTING_SIZE_HEIGHT[2],
@@ -317,7 +316,7 @@ public plugin_init()
     g_iMaxPlayers = get_maxplayers()
 
     register_logevent("eventRoundStart", 2, "1=Round_Start")
-    set_task(g_eSettings[SETTING_GHOST_FREQ], "buyTask", .flags = "b")
+    set_task(0.1, "buyTask", .flags = "b")
     buyInit()
 }
 
@@ -567,16 +566,14 @@ ReadFile()
                             parseSetting(DTYPE_BOOL, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BUY_LOAD], charsmax(g_eSettings[SETTING_BUY_LOAD]))
                         else if ( equali(szKey, "SETTING_BUY_DEFAULT") )
                             parseSetting(DTYPE_BOOL, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BUY_DEFAULT], charsmax(g_eSettings[SETTING_BUY_DEFAULT]))
+                        else if ( equali(szKey, "SETTING_BUY_CHECK") )
+                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BUY_CHECK], charsmax(g_eSettings[SETTING_BUY_CHECK]))
                         else if ( equali(szKey, "SETTING_OFFSET_BASE") )
                             parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET_BASE], charsmax(g_eSettings[SETTING_OFFSET_BASE]))
                         else if ( equali(szKey, "SETTING_OFFSET") )
                             parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET], charsmax(g_eSettings[SETTING_OFFSET]))
                         else if ( equali(szKey, "SETTING_OFFSET_STEP") )
                             parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET_STEP], charsmax(g_eSettings[SETTING_OFFSET_STEP]))
-                        else if ( equali(szKey, "SETTING_OFFSET_FREQ") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET_FREQ], charsmax(g_eSettings[SETTING_OFFSET_FREQ]))
-                        else if ( equali(szKey, "SETTING_GHOST_FREQ") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_GHOST_FREQ], charsmax(g_eSettings[SETTING_GHOST_FREQ]))
                         else if ( equali(szKey, "SETTING_SIZE_BASE") )
                             parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SIZE_BASE], charsmax(g_eSettings[SETTING_SIZE_BASE]))
                         else if ( equali(szKey, "SETTING_SIZE_HEIGHT") )
@@ -1588,13 +1585,13 @@ public fwdPreThink(id)
             {
                 g_ePlayerData[id][PDATA_OFFSET]      += g_eSettings[SETTING_OFFSET_STEP]
                 g_ePlayerData[id][PDATA_OFFSET]      = floatclamp(g_ePlayerData[id][PDATA_OFFSET], g_eSettings[SETTING_OFFSET][0], g_eSettings[SETTING_OFFSET][1])
-                g_ePlayerData[id][PDATA_NEXT_OFFSET] = get_gametime() + g_eSettings[SETTING_OFFSET_FREQ]
+                g_ePlayerData[id][PDATA_NEXT_OFFSET] = get_gametime() + 0.1
             }
             else if ( iButton & IN_ATTACK2 )
             {
                 g_ePlayerData[id][PDATA_OFFSET]      -= g_eSettings[SETTING_OFFSET_STEP]
                 g_ePlayerData[id][PDATA_OFFSET]      = floatclamp(g_ePlayerData[id][PDATA_OFFSET], g_eSettings[SETTING_OFFSET][0], g_eSettings[SETTING_OFFSET][1])
-                g_ePlayerData[id][PDATA_NEXT_OFFSET] = get_gametime() + g_eSettings[SETTING_OFFSET_FREQ]
+                g_ePlayerData[id][PDATA_NEXT_OFFSET] = get_gametime() + 0.1
             }
         }
 
@@ -1653,41 +1650,37 @@ public buyTrace(eBuy[BUY], id)
 
 stock buyCheck(id)
 {
-    new eBuy[BUY], Float:fVec1[3], Float:fVec2[3], Float:fForward[3]
-    new iBest, Float:fBestDist, Float:fTraceLength, Float:fDot, Float:fDist
+    new eBuy[BUY], Float:fVec1[3], Float:fVec2[3], Float:fVec3[3], Float:fMins[3], Float:fMaxs[3], Float:fNearest[3]
+    new iBest, Float:fBestDist, Float:fDot, Float:fDist
 
     pev(id, pev_origin, fVec1)
     pev(id, pev_view_ofs, fVec2)
     xs_vec_add(fVec1, fVec2, fVec1)
 
-    pev(id, pev_v_angle, fForward)
-    engfunc(EngFunc_MakeVectors, fForward)
-    global_get(glb_v_forward, fForward)
-
-    xs_vec_mul_scalar(fForward, 9999.9, fVec2)
-    xs_vec_add(fVec2, fVec1, fVec2)
-
-    engfunc(EngFunc_TraceLine, fVec1, fVec2, DONT_IGNORE_MONSTERS, id, 0)
-    get_tr2(0, TR_vecEndPos, fVec2)
+    pev(id, pev_v_angle, fVec2)
+    engfunc(EngFunc_MakeVectors, fVec2)
+    global_get(glb_v_forward, fVec2)
 
     iBest = -1
-    fBestDist = 20.0
-    fTraceLength = get_distance_f(fVec1, fVec2)
-
+    fBestDist = g_eSettings[SETTING_BUY_CHECK]
     for ( new i = 0; i < g_iBuy; i ++ )
     {
         ArrayGetArray(g_aBuy, i, eBuy)
-        xs_vec_sub(eBuy[BUY_ORIGIN], fVec1, fVec2)
-        fDot = xs_vec_dot(fVec2, fForward)
+        xs_vec_sub(eBuy[BUY_ORIGIN], fVec1, fVec3)
+        fDot = xs_vec_dot(fVec2, fVec3)
 
-        if ( fDot < 0.0 || fDot > fTraceLength )
+        if ( fDot < 0.0 )
             continue
 
-        xs_vec_copy(fForward, fVec2)
-        xs_vec_mul_scalar(fVec2, fDot, fVec2)
-        xs_vec_add(fVec2, fVec1, fVec2)
+        pev(eBuy[BUY_ID], pev_absmin, fMins)
+        pev(eBuy[BUY_ID], pev_absmax, fMaxs)
+        xs_vec_mul_scalar(fVec2, fDot, fVec3)
+        xs_vec_add(fVec3, fVec1, fVec3)
 
-        fDist = get_distance_f(eBuy[BUY_ORIGIN], fVec2)
+        fNearest[0] = floatclamp(fVec3[0], fMins[0], fMaxs[0])
+        fNearest[1] = floatclamp(fVec3[1], fMins[1], fMaxs[1])
+        fNearest[2] = floatclamp(fVec3[2], fMins[2], fMaxs[2])
+        fDist = get_distance_f(fVec3, fNearest)
         if ( fDist < fBestDist )
         {
             fBestDist = fDist
