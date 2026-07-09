@@ -59,11 +59,14 @@
     #define MAX_PLATFORM_PATH_LENGTH 256
 #endif
 
-#define MAX_ENT             32
-#define BUY_KEY             1824
-#define BUY_ICON_KEY        4281
-#define BUY_ICON_OWNER      pev_iuser1
-#define BUY_ARRAY_ITEM      pev_iuser1
+#define MAX_ENT                     32
+#define BUY_KEY                     1824
+#define BUY_ICON_KEY                4281
+#define BUY_ICON_OWNER              pev_iuser1
+#define BUY_ARRAY_ITEM              pev_iuser1
+
+#define XO_CBASEPLAYER              5
+#define XO_CBASEPLAYERWEAPON        4
 
 new const PLUGIN_VERSION[]       = "1.4"
 new const Float:DELAY_ON_CONNECT = 1.0
@@ -259,6 +262,16 @@ enum
     SCALE_FACTOR = 4,
     SCALE_MODE,
     SCALE_PLACE
+}
+
+new Float:g_fDirections[][] =
+{
+    {-1.0, 0.0, 0.0},
+    {1.0, 0.0, 0.0},
+    {0.0, -1.0, 0.0},
+    {0.0, 1.0, 0.0},
+    {0.0, 0.0, -1.0},
+    {0.0, 0.0, 1.0}
 }
 
 new g_szMenuHandler[][] =
@@ -953,6 +966,14 @@ public menuHandlerStatus(id, menu, item)
             buySound(id, SOUND_MENU_ALERT)
             buyMenu(id, MENU_STATUS)
         }
+        case MENU_EXIT:
+        {
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_ROOT)
+
+            g_ePlayerData[id][PDATA_BUY_ACTION] = false
+            g_ePlayerData[id][PDATA_BUY_MENU] = 0
+        }
         default:
         {
             g_ePlayerData[id][PDATA_BUY_ACTION] = false
@@ -1041,6 +1062,14 @@ public menuHandlerRemove(id, menu, item)
 
             buySound(id, SOUND_MENU_ALERT)
             buyMenu(id, MENU_REMOVE)
+        }
+        case MENU_EXIT:
+        {
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_ROOT)
+
+            g_ePlayerData[id][PDATA_BUY_ACTION] = false
+            g_ePlayerData[id][PDATA_BUY_MENU] = 0
         }
         default:
         {
@@ -1183,6 +1212,16 @@ public menuHandlerScale(id, menu, item)
             client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_CREATE_NEW", eBuy[BUY_NAME])
             buySound(id, SOUND_MENU_NAV)
             buyMenu(id, MENU_ROOT)
+        }
+        case MENU_EXIT:
+        {
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_CREATE)
+
+            buyKill(eBuy[BUY_ID])
+            buyRemove(iItem)
+            g_ePlayerData[id][PDATA_BUY_GHOST] = 0
+            g_ePlayerData[id][PDATA_BUY_ACTION] = false
         }
         default:
         {
@@ -1707,12 +1746,8 @@ stock buySetBox(eBuy[BUY], bool:bSetCorners = false)
     if ( bSetCorners )
         boxCorners(eBuy)
 
-    for ( new i = 0; i < 3; i ++ )
-    {
-        eBuy[BUY_MINS][i] = eBuy[BUY_CORNERS][i]
-        eBuy[BUY_MAXS][i] = eBuy[BUY_CORNERS][i]
-    }
-
+    xs_vec_copy(eBuy[BUY_CORNERS][0], eBuy[BUY_MINS])
+    xs_vec_copy(eBuy[BUY_CORNERS][0], eBuy[BUY_MAXS])
     for ( new i = 1; i < 8; i ++ )
     {
         for ( new j = 0; j < 3; j ++ )
@@ -1721,6 +1756,9 @@ stock buySetBox(eBuy[BUY], bool:bSetCorners = false)
             eBuy[BUY_MAXS][j] = floatmax(eBuy[BUY_MAXS][j], eBuy[BUY_CORNERS][i * 3 + j])
         }
     }
+
+    xs_vec_sub(eBuy[BUY_MINS], eBuy[BUY_ORIGIN], eBuy[BUY_MINS])
+    xs_vec_sub(eBuy[BUY_MAXS], eBuy[BUY_ORIGIN], eBuy[BUY_MAXS])
 }
 
 public boxCorners(eBuy[BUY])
@@ -1760,38 +1798,39 @@ public boxCorners(eBuy[BUY])
 
 stock buySetOffset(eBuy[BUY])
 {
-    new Float:fVec1[3],
-        Float:fGap, Float:fDist
+    new Float:fGaps[6], Float:fVec1[3], Float:fCurrentGap
+    fGaps[0] = -eBuy[BUY_MINS][0]
+    fGaps[1] = eBuy[BUY_MAXS][0]
+    fGaps[2] = -eBuy[BUY_MINS][1]
+    fGaps[3] = eBuy[BUY_MAXS][1]
+    fGaps[4] = -eBuy[BUY_MINS][2]
+    fGaps[5] = eBuy[BUY_MAXS][2]
 
-    xs_vec_sub(eBuy[BUY_ORIGIN], Float:{0.0, 0.0, 9999.9}, fVec1)
-    engfunc(EngFunc_TraceLine, eBuy[BUY_ORIGIN], fVec1, IGNORE_MONSTERS, eBuy[BUY_ID], 0)
-    get_tr2(0, TR_vecEndPos, fVec1)
-    fDist = xs_vec_distance(eBuy[BUY_ORIGIN], fVec1)
-    fGap = eBuy[BUY_ORIGIN][2] - eBuy[BUY_MINS][2]
-
-    if ( fDist < (fGap + 1.0) )
+    for ( new i = 0; i < 6; i ++ )
     {
-        get_tr2(0, TR_vecPlaneNormal, fVec1)
-        xs_vec_mul_scalar(fVec1, (fGap + 1.0) - fDist, fVec1)
-        xs_vec_add(eBuy[BUY_ORIGIN], fVec1, eBuy[BUY_ORIGIN])
+        xs_vec_mul_scalar(g_fDirections[i], 9999.9, fVec1)
+        xs_vec_add(fVec1, eBuy[BUY_ORIGIN], fVec1)
+        engfunc(EngFunc_TraceLine, eBuy[BUY_ORIGIN], fVec1, DONT_IGNORE_MONSTERS, eBuy[BUY_ID], 0)
+        get_tr2(0, TR_vecEndPos, fVec1)
+        fCurrentGap = xs_vec_distance(eBuy[BUY_ORIGIN], fVec1)
+
+        if ( fCurrentGap < (fGaps[i] + 1.0) )
+        {
+            get_tr2(0, TR_vecPlaneNormal, fVec1)
+            xs_vec_mul_scalar(fVec1, (fGaps[i] + 1.0) - fCurrentGap, fVec1)
+            xs_vec_add(eBuy[BUY_ORIGIN], fVec1, eBuy[BUY_ORIGIN])
+        }
     }
 }
 
 stock buySetActive(eBuy[BUY])
 {
-    new Float:fVec1[3],
-        Float:fMins[3], Float:fMaxs[3]
-
     set_pev(eBuy[BUY_ID], pev_solid, SOLID_TRIGGER)
     set_pev(eBuy[BUY_ID], pev_movetype, MOVETYPE_NONE)
-    xs_vec_sub(eBuy[BUY_MINS], eBuy[BUY_ORIGIN], fMins)
-    xs_vec_sub(eBuy[BUY_MAXS], eBuy[BUY_ORIGIN], fMaxs)
-
-    xs_vec_copy(eBuy[BUY_ORIGIN], fVec1)
     if ( eBuy[BUY_FLAGS] & FLAG_ICON )
-        eBuy[BUY_ICON] = iconCreate(eBuy, fVec1)
+        eBuy[BUY_ICON] = iconCreate(eBuy, eBuy[BUY_ORIGIN])
 
-    engfunc(EngFunc_SetSize, eBuy[BUY_ID], fMins, fMaxs)
+    engfunc(EngFunc_SetSize, eBuy[BUY_ID], eBuy[BUY_MINS], eBuy[BUY_MAXS])
 }
 
 stock buyBeam(eBuy[BUY])
@@ -1921,16 +1960,18 @@ stock buySound(iEnt, iSound, iChan = CHAN_ITEM, bool:bPlayer = true, iFlags = 0,
 
 stock bool:isBuyActive(eBuy[BUY], id)
 {
-    new Float:fOrigin[3]
+    new Float:fOrigin[3], Float:fAbsMins[3], Float:fAbsMaxs[3]
 
     pev(id, pev_origin, fOrigin)
     for ( new i = 0; i < g_iBuy; i ++ )
     {
         ArrayGetArray(g_aBuy, i, eBuy)
+        xs_vec_add(eBuy[BUY_ORIGIN], eBuy[BUY_MINS], fAbsMins)
+        xs_vec_add(eBuy[BUY_ORIGIN], eBuy[BUY_MAXS], fAbsMaxs)
 
-        if ( fOrigin[0] >= eBuy[BUY_MINS][0] - 25.0 && fOrigin[0] <= eBuy[BUY_MAXS][0] + 25.0
-        && fOrigin[1] >= eBuy[BUY_MINS][1] - 25.0 && fOrigin[1] <= eBuy[BUY_MAXS][1] + 25.0
-        && fOrigin[2] >= eBuy[BUY_MINS][2] - 25.0 && fOrigin[2] <= eBuy[BUY_MAXS][2] + 25.0 )
+        if ( fOrigin[0] >= fAbsMins[0] - 25.0 && fOrigin[0] <= fAbsMaxs[0] + 25.0
+        && fOrigin[1] >= fAbsMins[1] - 25.0 && fOrigin[1] <= fAbsMaxs[1] + 25.0
+        && fOrigin[2] >= fAbsMins[2] - 25.0 && fOrigin[2] <= fAbsMaxs[2] + 25.0 )
             return true
     }
 
