@@ -210,7 +210,10 @@ enum _:PLAYER_DATA
     bool:PDATA_SCALE_UP,
     PDATA_SCALE_FACTOR,
     Float:PDATA_OFFSET,
-    Float:PDATA_NEXT_OFFSET
+    Float:PDATA_NEXT_OFFSET,
+
+    PDATA_MENU_TYPE,
+    bool:PDATA_MENU_TRACE
 }
 
 enum
@@ -412,7 +415,6 @@ public eventRoundStart()
             continue
 
         buyReset(eBuy)
-
         if ( eBuy[BUY_ACTIVE_CHANCE] >= random_float(0.0, 1.0) )
         {
             if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DELAY )
@@ -687,6 +689,9 @@ public buyInit()
 
 public buyMenu(id, iType)
 {
+    if ( !is_user_connected(id) )
+        return PLUGIN_HANDLED
+
     new szData[64], iMenu
     formatex(szData, charsmax(szData), "%L", id, "BUY_MENU_TITLE", PLUGIN_VERSION)
     iMenu = menu_create(szData, g_szMenuHandler[iType])
@@ -867,6 +872,7 @@ public menuStatus(id, iMenu)
     menu_additem(iMenu, szItem)
 
     g_ePlayerData[id][PDATA_BUY_ACTION] = true
+    g_ePlayerData[id][PDATA_MENU_TYPE] = MENU_STATUS
     eBuy[BUY_FLAGS] |= FLAG_SELECT
     ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 }
@@ -875,8 +881,11 @@ public menuHandlerStatus(id, menu, item)
 {
     new eBuy[BUY]
     ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-    eBuy[BUY_FLAGS] &= ~FLAG_SELECT
-    ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+    if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
+    {
+        eBuy[BUY_FLAGS] &= ~FLAG_SELECT
+        ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+    }
 
     switch( item )
     {
@@ -968,11 +977,16 @@ public menuHandlerStatus(id, menu, item)
         }
         case MENU_EXIT:
         {
-            buySound(id, SOUND_MENU_NAV)
-            buyMenu(id, MENU_ROOT)
+            if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
+            {
+                buySound(id, SOUND_MENU_NAV)
+                buyMenu(id, MENU_ROOT)
 
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
-            g_ePlayerData[id][PDATA_BUY_MENU] = 0
+                g_ePlayerData[id][PDATA_BUY_ACTION] = false
+                g_ePlayerData[id][PDATA_BUY_MENU] = 0
+            }
+
+            g_ePlayerData[id][PDATA_MENU_TRACE] = false
         }
         default:
         {
@@ -1000,6 +1014,7 @@ public menuRemove(id, iMenu)
     menu_additem(iMenu, szItem)
 
     g_ePlayerData[id][PDATA_BUY_ACTION] = true
+    g_ePlayerData[id][PDATA_MENU_TYPE] = MENU_REMOVE
     eBuy[BUY_FLAGS] |= FLAG_SELECT
     ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 }
@@ -1007,10 +1022,12 @@ public menuRemove(id, iMenu)
 public menuHandlerRemove(id, menu, item)
 {
     new eBuy[BUY]
-
     ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-    eBuy[BUY_FLAGS] &= ~FLAG_SELECT
-    ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+    if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
+    {
+        eBuy[BUY_FLAGS] &= ~FLAG_SELECT
+        ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+    }
 
     switch( item )
     {
@@ -1065,11 +1082,16 @@ public menuHandlerRemove(id, menu, item)
         }
         case MENU_EXIT:
         {
-            buySound(id, SOUND_MENU_NAV)
-            buyMenu(id, MENU_ROOT)
+            if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
+            {
+                buySound(id, SOUND_MENU_NAV)
+                buyMenu(id, MENU_ROOT)
 
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
-            g_ePlayerData[id][PDATA_BUY_MENU] = 0
+                g_ePlayerData[id][PDATA_BUY_ACTION] = false
+                g_ePlayerData[id][PDATA_BUY_MENU] = 0
+            }
+
+            g_ePlayerData[id][PDATA_MENU_TRACE] = false
         }
         default:
         {
@@ -1734,10 +1756,9 @@ stock buyCheck(id)
         eBuy[BUY_FLAGS] &= ~FLAG_SELECT
         ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 
-        ArrayGetArray(g_aBuy, iBest, eBuy)
-        eBuy[BUY_FLAGS] |= FLAG_SELECT
-        ArraySetArray(g_aBuy, iBest, eBuy)
+        g_ePlayerData[id][PDATA_MENU_TRACE] = true
         g_ePlayerData[id][PDATA_BUY_MENU] = iBest
+        buyMenu(id, g_ePlayerData[id][PDATA_MENU_TYPE])
     }
 }
 
