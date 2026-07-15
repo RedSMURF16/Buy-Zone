@@ -111,13 +111,6 @@ enum
 
 enum
 {
-    STATUS_DEFAULT,
-    STATUS_FORCE_ENABLE,
-    STATUS_FORCE_DISABLE
-}
-
-enum
-{
     TEAM_NONE,
     TEAM_T,
     TEAM_CT,
@@ -128,10 +121,7 @@ enum
 {
     SOUND_MENU_NAV,
     SOUND_MENU_REMOVE,
-    SOUND_MENU_ALERT,
-
-    SOUND_ENABLED,
-    SOUND_DISABLED
+    SOUND_MENU_ALERT
 }
 
 enum _:MAIN_SETTINGS
@@ -162,8 +152,6 @@ enum _:MAIN_SETTINGS
     SETTING_SOUND_MENU_NAV[MAX_RESOURCE_PATH_LENGTH],
     SETTING_SOUND_MENU_REMOVE[MAX_RESOURCE_PATH_LENGTH],
     SETTING_SOUND_MENU_ALERT[MAX_RESOURCE_PATH_LENGTH],
-    SETTING_SOUND_SUITCHARGE[MAX_RESOURCE_PATH_LENGTH],
-    SETTING_SOUND_BLIP2[MAX_RESOURCE_PATH_LENGTH],
 
     SETTING_BEAM,
     SETTING_BEAM_WIDTH,
@@ -177,7 +165,6 @@ enum _:BUY
     BUY_ID,
     BUY_ITEM,
     BUY_FLAGS,
-    BUY_STATUS,
     BUY_TEAM,
     BUY_RADAR,
     Float:BUY_ACTIVE_CHANCE,
@@ -298,10 +285,6 @@ new Array:g_aBuy,
     g_iBombDrop, g_iHostagePos, g_iHostageK, g_iStatusIcon,
     g_iMaxPlayers
 
-new g_szStatus[][] = {"BUY_DEFAULT", "BUY_ENABLED", "BUY_DISABLED"}
-new g_szStatusChat[][] = {"BUY_CHAT_DEFAULT", "BUY_CHAT_ENABLED", "BUY_CHAT_DISABLED"}
-new g_szStatusColor[][] = {"\d", "\y", "\r"}
-
 public plugin_init()
 {
     register_plugin("Buy Zone", PLUGIN_VERSION, "RedSMURF")
@@ -410,8 +393,7 @@ public eventRoundStart()
     for ( new i = 0; i < g_iBuy; i ++ )
     {
         ArrayGetArray(g_aBuy, i, eBuy)
-
-        if ( eBuy[BUY_STATUS] != STATUS_DEFAULT )
+        if ( !(eBuy[BUY_FLAGS] & FLAG_ACTIVE) )
             continue
 
         buyReset(eBuy)
@@ -603,10 +585,6 @@ ReadFile()
                             parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_MENU_REMOVE], charsmax(g_eSettings[SETTING_SOUND_MENU_REMOVE]))
                         else if ( equali(szKey, "SETTING_SOUND_MENU_ALERT") )
                             parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_MENU_ALERT], charsmax(g_eSettings[SETTING_SOUND_MENU_ALERT]))
-                        else if ( equali(szKey, "SETTING_SOUND_SUITCHARGE") )
-                            parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_SUITCHARGE], charsmax(g_eSettings[SETTING_SOUND_SUITCHARGE]))
-                        else if ( equali(szKey, "SETTING_SOUND_BLIP2") )
-                            parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_BLIP2], charsmax(g_eSettings[SETTING_SOUND_BLIP2]))
                         else if ( equali(szKey, "SETTING_BEAM") )
                             parseSetting(DTYPE_STRING_SPRITE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BEAM], charsmax(g_eSettings[SETTING_BEAM]))
                         else if ( equali(szKey, "SETTING_BEAM_WIDTH") )
@@ -640,7 +618,6 @@ ReadFile()
                             parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ICON_ALPHA], charsmax(eBuy[BUY_ICON_ALPHA]), g_eSettings[SETTING_DEFAULT_ICON_ALPHA])
                         else if ( equali(szKey, "BUY_ICON_SPRITE") )
                             parseSetting(DTYPE_STRING_MODEL, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]))
-
                     }
                 }
             }
@@ -859,16 +836,13 @@ public menuStatus(id, iMenu)
     ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_CURRENT",
-    g_szStatusColor[eBuy[BUY_STATUS]], eBuy[BUY_NAME], id, g_szStatus[eBuy[BUY_STATUS]])
+    eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "\y" : "\r", eBuy[BUY_NAME], id, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "BUY_ENABLED" : "BUY_DISABLED")
     menu_additem(iMenu, szItem)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_ALL_ENABLE")
     menu_additem(iMenu, szItem)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_ALL_DISABLE")
-    menu_additem(iMenu, szItem)
-
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_ALL_DEFAULT")
     menu_additem(iMenu, szItem)
 
     g_ePlayerData[id][PDATA_BUY_ACTION] = true
@@ -911,16 +885,10 @@ public menuHandlerStatus(id, menu, item)
         }
         case STATUS_CURRENT:
         {
-            if ( ++ eBuy[BUY_STATUS] > STATUS_FORCE_DISABLE )
-                eBuy[BUY_STATUS] = STATUS_DEFAULT
-
-            if ( eBuy[BUY_STATUS] == STATUS_FORCE_ENABLE )
-                eBuy[BUY_FLAGS] |= FLAG_ACTIVE
-            else if ( eBuy[BUY_STATUS] == STATUS_FORCE_DISABLE )
-                eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
+            eBuy[BUY_FLAGS] ^= FLAG_ACTIVE
 
             client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_STATUS_CURRENT",
-            eBuy[BUY_NAME], id, g_szStatusChat[eBuy[BUY_STATUS]])
+            eBuy[BUY_NAME], id, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "BUY_CHAT_ENABLED" : "BUY_CHAT_DISABLED")
             ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 
             iconRefresh()
@@ -934,7 +902,6 @@ public menuHandlerStatus(id, menu, item)
             {
                 ArrayGetArray(g_aBuy, i, eBuy)
                 eBuy[BUY_FLAGS] |= FLAG_ACTIVE
-                eBuy[BUY_STATUS] = STATUS_FORCE_ENABLE
 
                 ArraySetArray(g_aBuy, i, eBuy)
             }
@@ -951,7 +918,6 @@ public menuHandlerStatus(id, menu, item)
             {
                 ArrayGetArray(g_aBuy, i, eBuy)
                 eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
-                eBuy[BUY_STATUS] = STATUS_FORCE_DISABLE
 
                 ArraySetArray(g_aBuy, i, eBuy)
             }
@@ -959,19 +925,6 @@ public menuHandlerStatus(id, menu, item)
             iconRefresh()
 
             client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_STATUS_ALL_DISABLED")
-            buySound(id, SOUND_MENU_ALERT)
-            buyMenu(id, MENU_STATUS)
-        }
-        case STATUS_ALL_DEFAULT:
-        {
-            for ( new i = 0; i < g_iBuy; i ++ )
-            {
-                ArrayGetArray(g_aBuy, i, eBuy)
-                eBuy[BUY_STATUS] = STATUS_DEFAULT
-                ArraySetArray(g_aBuy, i, eBuy)
-            }
-
-            client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_STATUS_ALL_DEFAULT")
             buySound(id, SOUND_MENU_ALERT)
             buyMenu(id, MENU_STATUS)
         }
@@ -1007,7 +960,7 @@ public menuRemove(id, iMenu)
     menuNav(id, iMenu)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_REMOVE_CURRENT",
-    g_szStatusColor[eBuy[BUY_STATUS]], eBuy[BUY_NAME])
+    eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "\y" : "\r", eBuy[BUY_NAME])
     menu_additem(iMenu, szItem)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_REMOVE_ALL")
@@ -1078,7 +1031,7 @@ public menuHandlerRemove(id, menu, item)
             g_ePlayerData[id][PDATA_BUY_MENU] = 0
 
             buySound(id, SOUND_MENU_ALERT)
-            buyMenu(id, MENU_REMOVE)
+            buyMenu(id, MENU_ROOT)
         }
         case MENU_EXIT:
         {
@@ -1300,7 +1253,6 @@ public buyTask()
                 ArraySetArray(g_aBuy, i, eBuy)
 
                 iconRefresh()
-                buySound(eBuy[BUY_ID], SOUND_DISABLED, .bPlayer = false)
             }
         }
         else
@@ -1317,7 +1269,6 @@ public buyTask()
                 ArraySetArray(g_aBuy, i, eBuy)
 
                 iconRefresh()
-                buySound(eBuy[BUY_ID], SOUND_ENABLED, .bPlayer = false, .iPitch = 150)
             }
         }
     }
@@ -1421,9 +1372,6 @@ public saveData(id)
         formatex(szData, charsmax(szData), "flags = %d^n", eBuy[BUY_FLAGS])
         fputs(iFile, szData)
 
-        formatex(szData, charsmax(szData), "status = %d^n", eBuy[BUY_STATUS])
-        fputs(iFile, szData)
-
         formatex(szData, charsmax(szData), "scale = %.2f %.2f %.2f^n",
         eBuy[BUY_SCALE][0], eBuy[BUY_SCALE][1], eBuy[BUY_SCALE][2])
         fputs(iFile, szData)
@@ -1452,7 +1400,7 @@ public loadData()
 {
     new szFile[128], iFile,
         szData[64], szKey[32], szValue[32],
-        iItem, iFlags, iStatus, Float:fScale[3], Float:fOrigin[3], Float:fCorners[24],
+        iItem, iFlags, Float:fScale[3], Float:fOrigin[3], Float:fCorners[24],
         iCorner, iCount = -1
 
     get_mapname(szFile, charsmax(szFile))
@@ -1469,7 +1417,7 @@ public loadData()
         if ( szData[0] == '[' )
         {
             if ( iCount != -1 )
-                loadDataBuy(fCorners, fScale, fOrigin, iItem, iFlags, iStatus, iCount)
+                loadDataBuy(fCorners, fScale, fOrigin, iItem, iFlags, iCount)
 
             iCount ++
         }
@@ -1486,10 +1434,6 @@ public loadData()
             else if ( equal(szKey, "flags") )
             {
                 iFlags = str_to_num(szValue)
-            }
-            else if ( equal(szKey, "status") )
-            {
-                iStatus = str_to_num(szValue)
             }
             else if ( equal(szKey, "scale") )
             {
@@ -1524,20 +1468,19 @@ public loadData()
     }
 
     if ( iCount != -1 )
-        loadDataBuy(fCorners, fScale, fOrigin, iItem, iFlags, iStatus, iCount)
+        loadDataBuy(fCorners, fScale, fOrigin, iItem, iFlags, iCount)
 
     fclose(iFile)
     return PLUGIN_HANDLED
 }
 
-stock loadDataBuy(Float:fCorners[24], Float:fScale[3], Float:fOrigin[3], iItem, iFlags, iStatus, iCount)
+stock loadDataBuy(Float:fCorners[24], Float:fScale[3], Float:fOrigin[3], iItem, iFlags, iCount)
 {
     new eBuy[BUY]
     buyCreate(0, iItem)
     ArrayGetArray(g_aBuy, iCount, eBuy)
 
     eBuy[BUY_FLAGS] = iFlags
-    eBuy[BUY_STATUS] = iStatus
     eBuy[BUY_NEXT_RADAR] = get_gametime() + 2.0
     xs_vec_copy(fScale, eBuy[BUY_SCALE])
     xs_vec_copy(fOrigin, eBuy[BUY_ORIGIN])
@@ -1969,8 +1912,6 @@ stock buySound(iEnt, iSound, iChan = CHAN_ITEM, bool:bPlayer = true, iFlags = 0,
         case SOUND_MENU_NAV:    copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_MENU_NAV])
         case SOUND_MENU_REMOVE: copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_MENU_REMOVE])
         case SOUND_MENU_ALERT:  copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_MENU_ALERT])
-        case SOUND_ENABLED:     copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_SUITCHARGE])
-        case SOUND_DISABLED:    copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_BLIP2])
     }
 
     if ( bPlayer )
