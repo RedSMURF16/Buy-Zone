@@ -1777,7 +1777,7 @@ stock buySetOffset(eBuy[BUY])
     fGaps[4] = -eBuy[BUY_MINS][2]
     fGaps[5] = eBuy[BUY_MAXS][2]
 
-    for ( new i = 0; i < 6; i ++ )
+    for ( new i = 5; i >= 0; i -- )
     {
         xs_vec_mul_scalar(g_fDirections[i], 9999.9, fVec1)
         xs_vec_add(fVec1, eBuy[BUY_ORIGIN], fVec1)
