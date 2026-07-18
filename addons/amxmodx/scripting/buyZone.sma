@@ -640,11 +640,11 @@ public client_authorized(id)
 
 public client_disconnected(id)
 {
-    new iItem
+    new eBuy[BUY], iItem
     if ( g_ePlayerData[id][PDATA_BUY_GHOST]
-    && (iItem = pev(g_ePlayerData[id][PDATA_BUY_GHOST], BUY_ARRAY_ITEM)) != -1 )
+    && (iItem = buyGet(eBuy, g_ePlayerData[id][PDATA_BUY_GHOST])) != -1 )
     {
-        buyKill(g_ePlayerData[id][PDATA_BUY_GHOST])
+        buyKill(eBuy[BUY_ID])
         buyRemove(iItem)
     }
 
