@@ -365,23 +365,6 @@ public cmdReload(id, iLevel, iCmd)
     return PLUGIN_HANDLED
 }
 
-public client_command(id)
-{
-    if ( !g_ePlayerData[id][PDATA_BUY_GHOST] )
-        return PLUGIN_CONTINUE
-
-    new szCmd[16]
-    read_argv(0, szCmd, charsmax(szCmd))
-
-    if ( contain(szCmd, "weapon_") != -1 ||
-    equal(szCmd, "invnext") ||
-    equal(szCmd, "invprev") ||
-    equal(szCmd, "lastinv") )
-        return PLUGIN_HANDLED
-
-    return PLUGIN_CONTINUE
-}
-
 public eventRoundStart()
 {
     if ( !g_iBuy )
