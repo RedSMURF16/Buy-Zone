@@ -28,12 +28,15 @@ BUY_MENU_TITLE                      = \dBuy Zone - Version \y%s
 BUY_MENU_TITLE_PAGE                 = \yPage:\r
 
 BUY_ROOT_CREATE                     = Create Buy Zone
-BUY_ROOT_STATUS                     = Status Buy Zone
+BUY_ROOT_EDIT                       = Edit Buy Zone
 BUY_ROOT_REMOVE                     = Remove Buy Zone
 BUY_ROOT_SAVE                       = Save Data
+BUY_ROOT_STATUS                     = Status Buy Zone
 BUY_ROOT_NOCLIP                     = Status noclip %L
 BUY_ROOT_GODMODE                    = Status godmode %L
 BUY_ROOT_SCALE                      = Adjust scaling
+
+BUY_EDIT_STATUS                     = Edit Status
 
 BUY_STATUS_CURRENT                  = Status Buy Zone >> %s%s %L
 BUY_STATUS_ALL_ENABLE               = Enable All Buy Zones

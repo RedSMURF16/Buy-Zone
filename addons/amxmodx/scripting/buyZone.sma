@@ -67,9 +67,27 @@
 
 #define XO_CBASEPLAYER              5
 #define XO_CBASEPLAYERWEAPON        4
+#define BUY_CHECK                   10.0
+#define BUY_OFFSET_BASE             90.0
+#define BUY_OFFSET_MIN              42.0
+#define BUY_OFFSET_MAX              900.0
+#define BUY_OFFSET_STEP             10.0
+#define SIZE_BASE                   32.0
+#define SIZE_HEIGHT_MIN             5.0
+#define SIZE_HEIGHT_MAX             1500.0
+#define SIZE_WIDTH_MIN              5.0
+#define SIZE_WIDTH_MAX              1500.0
+#define SIZE_DEPTH_MIN              5.0
+#define SIZE_DEPTH_MAX              1500.0
+#define SOUND_NAV                   "buttons/blip1.wav"
+#define SOUND_REMOVE                "buttons/button10.wav"
+#define SOUND_ALERT                 "buttons/bell1.wav"
+#define BEAM_WIDTH                  5
+#define BEAM_ALPHA                  255
+#define BEAM_SPRITE                 "sprites/white.spr"
 
 new const PLUGIN_VERSION[]       = "1.4"
-new const Float:DELAY_ON_CONNECT = 1.0
+new const Float:DELAY_ON_LOAD       = 2.0
 new const ERROR_FILE[]           = "BuyZone_ERRORS.log"
 
 enum
@@ -81,15 +99,16 @@ enum
 
 enum
 {
-    DTYPE_FLOAT,
-    DTYPE_FLOAT_RANGE,
     DTYPE_INT,
-    DTYPE_BOOL,
+    DTYPE_FLOAT,
     DTYPE_FLAGS,
-    DTYPE_VECTOR,
     DTYPE_STRING_MODEL,
     DTYPE_STRING_SOUND,
-    DTYPE_STRING_SPRITE
+    DTYPE_ARRAY_MESSAGE,
+    DTYPE_ARRAY_MODEL,
+    DTYPE_ARRAY_SOUND,
+    DTYPE_STRING_MODEL_ID,
+    DTYPE_ARRAY_MODEL_ID
 }
 
 enum
@@ -139,23 +158,7 @@ enum _:MAIN_SETTINGS
 
     bool:SETTING_BUY_LOAD,
     bool:SETTING_BUY_DEFAULT,
-    Float:SETTING_BUY_CHECK,
-    Float:SETTING_OFFSET_BASE,
-    Float:SETTING_OFFSET[2],
-    Float:SETTING_OFFSET_STEP,
 
-    Float:SETTING_SIZE_BASE,
-    Float:SETTING_SIZE_HEIGHT[2],
-    Float:SETTING_SIZE_WIDTH[2],
-    Float:SETTING_SIZE_DEPTH[2],
-
-    SETTING_SOUND_MENU_NAV[MAX_RESOURCE_PATH_LENGTH],
-    SETTING_SOUND_MENU_REMOVE[MAX_RESOURCE_PATH_LENGTH],
-    SETTING_SOUND_MENU_ALERT[MAX_RESOURCE_PATH_LENGTH],
-
-    SETTING_BEAM,
-    SETTING_BEAM_WIDTH,
-    SETTING_BEAM_ALPHA,
     SETTING_COLOR_ACTIVE[3],
     SETTING_COLOR_INACTIVE[3]
 }
@@ -285,6 +288,10 @@ new Array:g_aBuy,
     g_iBombDrop, g_iHostagePos, g_iHostageK, g_iStatusIcon,
     g_iMaxPlayers
 
+new g_iBeam
+
+new HamHook:g_iFwdPreThink, HamHook:g_iFwdKilled, g_iActivePlayers
+
 public plugin_init()
 {
     register_plugin("Buy Zone", PLUGIN_VERSION, "RedSMURF")
@@ -303,8 +310,8 @@ public plugin_init()
     register_forward(FM_AddToFullPack, "fwdAddToFullPack", 1)
     RegisterHam(Ham_Spawn, "func_buyzone", "fwdSpawn", 1)
     RegisterHam(Ham_Spawn, "env_sprite", "fwdSpawn", 1)
-    RegisterHam(Ham_Player_PreThink, "player", "fwdPreThink")
-    RegisterHam(Ham_Killed, "player", "fwdKilled", 1)
+    g_iFwdPreThink = RegisterHam(Ham_Player_PreThink, "player", "fwdPreThink")
+    g_iFwdKilled = RegisterHam(Ham_Killed, "player", "fwdKilled", 1)
 
     register_event("StatusIcon", "eventStatusIconHide", "bef", "1=0", "2=buyzone")
     register_event("StatusIcon", "eventStatusIconDraw", "bef", "1=1", "2=buyzone")
@@ -315,6 +322,7 @@ public plugin_init()
     g_iMaxPlayers = get_maxplayers()
 
     register_logevent("eventRoundStart", 2, "1=Round_Start")
+    DisableForward()
     set_task(0.1, "buyTask", .flags = "b")
     buyInit()
 }
@@ -323,6 +331,7 @@ public plugin_precache()
 {
     g_aBuy = ArrayCreate(BUY)
     g_aBuyConfig = ArrayCreate(BUY)
+    g_iBeam = precache_model(BEAM_SPRITE)
 
     ReadFile()
 }
@@ -418,21 +427,6 @@ ReadFile()
     {
         for ( new id = 1; id <= g_iMaxPlayers; id ++ )
             if ( is_user_connected(id))
-                UpdateData(id)
-
-        ArrayClear(g_aBuyConfig)
-        g_iBuyConfig = 0
-    }
-
-    new g_szFileName[MAX_RESOURCE_PATH_LENGTH]
-    get_configsdir(g_szFileName, charsmax(g_szFileName))
-    add(g_szFileName, charsmax(g_szFileName), "/BuyZone.ini")
-
-    new iFile
-    iFile = fopen(g_szFileName, "rt")
-
-    if ( !iFile )
-    {
         set_fail_state("An error occured during the opening of the configuration file !")
     }
 
@@ -523,84 +517,56 @@ ReadFile()
                         trim(szValue)
 
                         if ( equali(szKey, "SETTING_DEFAULT_FLAGS") )
-                            parseSetting(DTYPE_FLAGS, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_FLAGS], charsmax(g_eSettings[SETTING_DEFAULT_FLAGS]))
+                            parseSetting(DTYPE_FLAGS, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_FLAGS], charsmax(g_eSettings[SETTING_DEFAULT_FLAGS]))
                         else if ( equali(szKey, "SETTING_DEFAULT_TEAM") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_TEAM], charsmax(g_eSettings[SETTING_DEFAULT_TEAM]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_TEAM], charsmax(g_eSettings[SETTING_DEFAULT_TEAM]))
                         else if ( equali(szKey, "SETTING_DEFAULT_RADAR") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_RADAR], charsmax(g_eSettings[SETTING_DEFAULT_RADAR]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_RADAR], charsmax(g_eSettings[SETTING_DEFAULT_RADAR]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_CHANCE") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE]))
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_DELAY") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY]))
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_DURATION") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION]))
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_COOLDOWN") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN]))
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ICON_SPRITE") )
-                            parseSetting(DTYPE_STRING_MODEL, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_SPRITE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SPRITE]))
+                            parseSetting(DTYPE_STRING_MODEL, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_SPRITE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SPRITE]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ICON_SCALE") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_SCALE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SCALE]))
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_SCALE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SCALE]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ICON_ALPHA") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_ALPHA], charsmax(g_eSettings[SETTING_DEFAULT_ICON_ALPHA]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_ALPHA], charsmax(g_eSettings[SETTING_DEFAULT_ICON_ALPHA]))
                         else if ( equali(szKey, "SETTING_BUY_LOAD") )
-                            parseSetting(DTYPE_BOOL, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BUY_LOAD], charsmax(g_eSettings[SETTING_BUY_LOAD]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_BUY_LOAD], charsmax(g_eSettings[SETTING_BUY_LOAD]))
                         else if ( equali(szKey, "SETTING_BUY_DEFAULT") )
-                            parseSetting(DTYPE_BOOL, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BUY_DEFAULT], charsmax(g_eSettings[SETTING_BUY_DEFAULT]))
-                        else if ( equali(szKey, "SETTING_BUY_CHECK") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BUY_CHECK], charsmax(g_eSettings[SETTING_BUY_CHECK]))
-                        else if ( equali(szKey, "SETTING_OFFSET_BASE") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET_BASE], charsmax(g_eSettings[SETTING_OFFSET_BASE]))
-                        else if ( equali(szKey, "SETTING_OFFSET") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET], charsmax(g_eSettings[SETTING_OFFSET]))
-                        else if ( equali(szKey, "SETTING_OFFSET_STEP") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_OFFSET_STEP], charsmax(g_eSettings[SETTING_OFFSET_STEP]))
-                        else if ( equali(szKey, "SETTING_SIZE_BASE") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SIZE_BASE], charsmax(g_eSettings[SETTING_SIZE_BASE]))
-                        else if ( equali(szKey, "SETTING_SIZE_HEIGHT") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SIZE_HEIGHT], charsmax(g_eSettings[SETTING_SIZE_HEIGHT]))
-                        else if ( equali(szKey, "SETTING_SIZE_WIDTH") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SIZE_WIDTH], charsmax(g_eSettings[SETTING_SIZE_WIDTH]))
-                        else if ( equali(szKey, "SETTING_SIZE_DEPTH") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SIZE_DEPTH], charsmax(g_eSettings[SETTING_SIZE_DEPTH]))
-                        else if ( equali(szKey, "SETTING_SOUND_MENU_NAV") )
-                            parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_MENU_NAV], charsmax(g_eSettings[SETTING_SOUND_MENU_NAV]))
-                        else if ( equali(szKey, "SETTING_SOUND_MENU_REMOVE") )
-                            parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_MENU_REMOVE], charsmax(g_eSettings[SETTING_SOUND_MENU_REMOVE]))
-                        else if ( equali(szKey, "SETTING_SOUND_MENU_ALERT") )
-                            parseSetting(DTYPE_STRING_SOUND, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_SOUND_MENU_ALERT], charsmax(g_eSettings[SETTING_SOUND_MENU_ALERT]))
-                        else if ( equali(szKey, "SETTING_BEAM") )
-                            parseSetting(DTYPE_STRING_SPRITE, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BEAM], charsmax(g_eSettings[SETTING_BEAM]))
-                        else if ( equali(szKey, "SETTING_BEAM_WIDTH") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BEAM_WIDTH], charsmax(g_eSettings[SETTING_BEAM_WIDTH]))
-                        else if ( equali(szKey, "SETTING_BEAM_ALPHA") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_BEAM_ALPHA], charsmax(g_eSettings[SETTING_BEAM_ALPHA]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_BUY_DEFAULT], charsmax(g_eSettings[SETTING_BUY_DEFAULT]))
                         else if ( equali(szKey, "SETTING_COLOR_ACTIVE") )
-                            parseSetting(DTYPE_VECTOR, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_COLOR_ACTIVE], charsmax(g_eSettings[SETTING_COLOR_ACTIVE]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_COLOR_ACTIVE], charsmax(g_eSettings[SETTING_COLOR_ACTIVE]))
                         else if ( equali(szKey, "SETTING_COLOR_INACTIVE") )
-                            parseSetting(DTYPE_VECTOR, szKey, charsmax(szKey), szValue, charsmax(szValue), g_eSettings[SETTING_COLOR_INACTIVE], charsmax(g_eSettings[SETTING_COLOR_INACTIVE]))
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_COLOR_INACTIVE], charsmax(g_eSettings[SETTING_COLOR_INACTIVE]))
                     }
                     case SECTION_BUY:
                     {
                         if ( equali(szKey, "BUY_FLAGS") )
-                            parseSetting(DTYPE_FLAGS, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_FLAGS], charsmax(eBuy[BUY_FLAGS]), g_eSettings[SETTING_DEFAULT_FLAGS])
+                            parseSetting(DTYPE_FLAGS, szValue, charsmax(szValue), eBuy[BUY_FLAGS], charsmax(eBuy[BUY_FLAGS]))
                         else if ( equali(szKey, "BUY_RADAR") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_RADAR], charsmax(eBuy[BUY_RADAR]), g_eSettings[SETTING_DEFAULT_RADAR])
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), eBuy[BUY_RADAR], charsmax(eBuy[BUY_RADAR]))
                         else if ( equali(szKey, "BUY_TEAM") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_TEAM], charsmax(eBuy[BUY_TEAM]), g_eSettings[SETTING_DEFAULT_TEAM])
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), eBuy[BUY_TEAM], charsmax(eBuy[BUY_TEAM]))
                         else if ( equali(szKey, "BUY_ACTIVE_CHANCE") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ACTIVE_CHANCE], charsmax(eBuy[BUY_ACTIVE_CHANCE]), g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE])
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_CHANCE], charsmax(eBuy[BUY_ACTIVE_CHANCE]))
                         else if ( equali(szKey, "BUY_ACTIVE_DELAY") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ACTIVE_DELAY], charsmax(eBuy[BUY_ACTIVE_DELAY]), g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY])
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_DELAY], charsmax(eBuy[BUY_ACTIVE_DELAY]))
                         else if ( equali(szKey, "BUY_ACTIVE_DURATION") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ACTIVE_DURATION], charsmax(eBuy[BUY_ACTIVE_DURATION]), g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION])
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_DURATION], charsmax(eBuy[BUY_ACTIVE_DURATION]))
                         else if ( equali(szKey, "BUY_ACTIVE_COOLDOWN") )
-                            parseSetting(DTYPE_FLOAT_RANGE, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ACTIVE_COOLDOWN], charsmax(eBuy[BUY_ACTIVE_COOLDOWN]), g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN])
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_COOLDOWN], charsmax(eBuy[BUY_ACTIVE_COOLDOWN]))
                         else if ( equali(szKey, "BUY_ICON_SCALE") )
-                            parseSetting(DTYPE_FLOAT, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ICON_SCALE], charsmax(eBuy[BUY_ICON_SCALE]), g_eSettings[SETTING_DEFAULT_ICON_SCALE])
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ICON_SCALE], charsmax(eBuy[BUY_ICON_SCALE]))
                         else if ( equali(szKey, "BUY_ICON_ALPHA") )
-                            parseSetting(DTYPE_INT, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ICON_ALPHA], charsmax(eBuy[BUY_ICON_ALPHA]), g_eSettings[SETTING_DEFAULT_ICON_ALPHA])
+                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), eBuy[BUY_ICON_ALPHA], charsmax(eBuy[BUY_ICON_ALPHA]))
                         else if ( equali(szKey, "BUY_ICON_SPRITE") )
-                            parseSetting(DTYPE_STRING_MODEL, szKey, charsmax(szKey), szValue, charsmax(szValue), eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]))
+                            parseSetting(DTYPE_STRING_MODEL, szValue, charsmax(szValue), eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]))
                     }
                 }
             }
@@ -614,11 +580,6 @@ ReadFile()
 
     g_bFileWasRead = true
     fclose(iFile)
-}
-
-public client_authorized(id)
-{
-    set_task(DELAY_ON_CONNECT, "UpdateData", id)
 }
 
 public client_disconnected(id)
@@ -636,15 +597,10 @@ public client_disconnected(id)
     g_ePlayerData[id][PDATA_BUY_MENU]    = 0
 }
 
-public UpdateData(id)
-{
-    g_ePlayerData[id][PDATA_OFFSET] = g_eSettings[SETTING_OFFSET_BASE]
-}
-
 public buyInit()
 {
     if ( g_eSettings[SETTING_BUY_LOAD] )
-        loadData()
+        set_task(DELAY_ON_LOAD, "loadData")
 }
 
 public buyMenu(id, iType)
@@ -1091,14 +1047,14 @@ public menuHandlerScale(id, menu, item)
             if ( g_ePlayerData[id][PDATA_SCALE_UP] )
             {
                 eBuy[BUY_SCALE][2] += g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][2] > g_eSettings[SETTING_SIZE_HEIGHT][1])
-                    eBuy[BUY_SCALE][2] = g_eSettings[SETTING_SIZE_HEIGHT][1]
+                if (eBuy[BUY_SCALE][2] > SIZE_HEIGHT_MAX)
+                    eBuy[BUY_SCALE][2] = SIZE_HEIGHT_MAX
             }
             else
             {
                 eBuy[BUY_SCALE][2] -= g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][2] < g_eSettings[SETTING_SIZE_HEIGHT][0])
-                    eBuy[BUY_SCALE][2] = g_eSettings[SETTING_SIZE_HEIGHT][0]
+                if (eBuy[BUY_SCALE][2] < SIZE_HEIGHT_MIN)
+                    eBuy[BUY_SCALE][2] = SIZE_HEIGHT_MIN
             }
 
             ArraySetArray(g_aBuy, iItem, eBuy)
@@ -1110,14 +1066,14 @@ public menuHandlerScale(id, menu, item)
             if ( g_ePlayerData[id][PDATA_SCALE_UP] )
             {
                 eBuy[BUY_SCALE][0] += g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][0] > g_eSettings[SETTING_SIZE_WIDTH][1])
-                    eBuy[BUY_SCALE][0] = g_eSettings[SETTING_SIZE_WIDTH][1]
+                if (eBuy[BUY_SCALE][0] > SIZE_WIDTH_MAX)
+                    eBuy[BUY_SCALE][0] = SIZE_WIDTH_MAX
             }
             else
             {
                 eBuy[BUY_SCALE][0] -= g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][0] < g_eSettings[SETTING_SIZE_WIDTH][0])
-                    eBuy[BUY_SCALE][0] = g_eSettings[SETTING_SIZE_WIDTH][0]
+                if (eBuy[BUY_SCALE][0] < SIZE_WIDTH_MIN)
+                    eBuy[BUY_SCALE][0] = SIZE_WIDTH_MIN
             }
 
             ArraySetArray(g_aBuy, iItem, eBuy)
@@ -1129,14 +1085,14 @@ public menuHandlerScale(id, menu, item)
             if ( g_ePlayerData[id][PDATA_SCALE_UP] )
             {
                 eBuy[BUY_SCALE][1] += g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][1] > g_eSettings[SETTING_SIZE_DEPTH][1])
-                    eBuy[BUY_SCALE][1] = g_eSettings[SETTING_SIZE_DEPTH][1]
+                if (eBuy[BUY_SCALE][1] > SIZE_DEPTH_MAX)
+                    eBuy[BUY_SCALE][1] = SIZE_DEPTH_MAX
             }
             else
             {
                 eBuy[BUY_SCALE][1] -= g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][1] < g_eSettings[SETTING_SIZE_DEPTH][0])
-                    eBuy[BUY_SCALE][1] = g_eSettings[SETTING_SIZE_DEPTH][0]
+                if (eBuy[BUY_SCALE][1] < SIZE_DEPTH_MIN)
+                    eBuy[BUY_SCALE][1] = SIZE_DEPTH_MIN
             }
 
             ArraySetArray(g_aBuy, iItem, eBuy)
@@ -1283,7 +1239,7 @@ stock iconCreate(eBuy[BUY], Float:fOrigin[3])
     engfunc(EngFunc_SetModel, iEnt, eBuy[BUY_ICON_SPRITE])
 
     set_pev(iEnt, pev_scale, eBuy[BUY_ICON_SCALE])
-    set_rendering(iEnt, kRenderFxNone, iColor[0], iColor[1], iColor[2], kRenderTransAdd, eBuy[BUY_ICON_ALPHA])
+    set_ent_rendering(iEnt, kRenderFxNone, 255, 255, 255, kRenderTransAdd, eBuy[BUY_ICON_ALPHA])
 
     dllfunc(DLLFunc_Spawn, iEnt)
     return iEnt
@@ -1302,14 +1258,14 @@ public buyCreate(id, iItem)
 
     eBuy[BUY_ID] = iEnt
     eBuy[BUY_ITEM] = iItem
-    eBuy[BUY_SCALE][0] = eBuy[BUY_SCALE][1] = eBuy[BUY_SCALE][2] = g_eSettings[SETTING_SIZE_BASE]
+    eBuy[BUY_SCALE][0] = eBuy[BUY_SCALE][1] = eBuy[BUY_SCALE][2] = SIZE_BASE
     if ( id )
     {
         g_ePlayerData[id][PDATA_BUY_GHOST] = iEnt
         g_ePlayerData[id][PDATA_BUY_ACTION] = true
         g_ePlayerData[id][PDATA_SCALE_UP] = true
         g_ePlayerData[id][PDATA_SCALE_FACTOR] = 0
-        g_ePlayerData[id][PDATA_OFFSET] = g_eSettings[SETTING_OFFSET_BASE]
+        g_ePlayerData[id][PDATA_OFFSET] = BUY_OFFSET_BASE
     }
 
     set_pev(iEnt, BUY_ARRAY_ITEM, g_iBuy)
@@ -1517,18 +1473,18 @@ public fwdAddToFullPack(es, e, iEnt, iHost, iHostFlags, iPlayer, pSet)
     || !get_orig_retval() )
         return FMRES_IGNORED
 
-    new eBuy[BUY], bool:bHidden
-    if ( buyGet(eBuy, pev(iEnt, BUY_ICON_OWNER)) != -1
-    && eBuy[BUY_FLAGS] & FLAG_ICON )
-    {
-        bHidden = !(eBuy[BUY_FLAGS] & FLAG_ACTIVE) || !(CsTeams:eBuy[BUY_TEAM] & cs_get_user_team(iHost))
+    // new eBuy[BUY], bool:bHidden
+    // if ( buyGet(eBuy, pev(iEnt, BUY_ICON_OWNER)) != -1
+    // && eBuy[BUY_FLAGS] & FLAG_ICON )
+    // {
+    //     bHidden = !(eBuy[BUY_FLAGS] & FLAG_ACTIVE) || !(CsTeams:eBuy[BUY_TEAM] & cs_get_user_team(iHost))
 
-        set_es(es, ES_RenderAmt, eBuy[BUY_ICON_ALPHA])
-        if ( bHidden )
-            set_es(es, ES_RenderColor, g_eSettings[SETTING_COLOR_INACTIVE])
-        else
-            set_es(es, ES_RenderColor, g_eSettings[SETTING_COLOR_ACTIVE])
-    }
+    //     set_es(es, ES_RenderAmt, eBuy[BUY_ICON_ALPHA])
+    //     if ( bHidden )
+    //         set_es(es, ES_RenderColor, g_eSettings[SETTING_COLOR_INACTIVE])
+    //     else
+    //         set_es(es, ES_RenderColor, g_eSettings[SETTING_COLOR_ACTIVE])
+    // }
 
     return FMRES_IGNORED
 }
@@ -1577,14 +1533,14 @@ public fwdPreThink(id)
         {
             if ( iButton & IN_ATTACK )
             {
-                g_ePlayerData[id][PDATA_OFFSET]      += g_eSettings[SETTING_OFFSET_STEP]
-                g_ePlayerData[id][PDATA_OFFSET]      = floatclamp(g_ePlayerData[id][PDATA_OFFSET], g_eSettings[SETTING_OFFSET][0], g_eSettings[SETTING_OFFSET][1])
+                g_ePlayerData[id][PDATA_OFFSET]      += BUY_OFFSET_STEP
+                g_ePlayerData[id][PDATA_OFFSET]      = floatclamp(g_ePlayerData[id][PDATA_OFFSET], BUY_OFFSET_MIN, BUY_OFFSET_MAX)
                 g_ePlayerData[id][PDATA_NEXT_OFFSET] = get_gametime() + 0.1
             }
             else if ( iButton & IN_ATTACK2 )
             {
-                g_ePlayerData[id][PDATA_OFFSET]      -= g_eSettings[SETTING_OFFSET_STEP]
-                g_ePlayerData[id][PDATA_OFFSET]      = floatclamp(g_ePlayerData[id][PDATA_OFFSET], g_eSettings[SETTING_OFFSET][0], g_eSettings[SETTING_OFFSET][1])
+                g_ePlayerData[id][PDATA_OFFSET]      -= BUY_OFFSET_STEP
+                g_ePlayerData[id][PDATA_OFFSET]      = floatclamp(g_ePlayerData[id][PDATA_OFFSET], BUY_OFFSET_MIN, BUY_OFFSET_MAX)
                 g_ePlayerData[id][PDATA_NEXT_OFFSET] = get_gametime() + 0.1
             }
         }
@@ -1656,7 +1612,7 @@ stock buyCheck(id)
     global_get(glb_v_forward, fVec2)
 
     iBest = -1
-    fBestDist = g_eSettings[SETTING_BUY_CHECK]
+    fBestDist = BUY_CHECK
     for ( new i = 0; i < g_iBuy; i ++ )
     {
         ArrayGetArray(g_aBuy, i, eBuy)
@@ -1826,25 +1782,25 @@ stock beamDraw(Float:fStart[3], Float:fEnd[3], bool:bActive)
     write_coord_f(fEnd[0])
     write_coord_f(fEnd[1])
     write_coord_f(fEnd[2])
-    write_short(g_eSettings[SETTING_BEAM])
+    write_short(g_iBeam)
     write_byte(0)
     write_byte(0)
     write_byte(1)
-    write_byte(g_eSettings[SETTING_BEAM_WIDTH])
+    write_byte(BEAM_WIDTH)
     write_byte(0)
     if ( bActive )
     {
-        write_byte(g_eSettings[SETTING_COLOR_ACTIVE][0])
-        write_byte(g_eSettings[SETTING_COLOR_ACTIVE][1])
-        write_byte(g_eSettings[SETTING_COLOR_ACTIVE][2])
+        write_byte(0)
+        write_byte(255)
+        write_byte(0)
     }
     else
     {
-        write_byte(g_eSettings[SETTING_COLOR_INACTIVE][0])
-        write_byte(g_eSettings[SETTING_COLOR_INACTIVE][1])
-        write_byte(g_eSettings[SETTING_COLOR_INACTIVE][2])
+        write_byte(255)
+        write_byte(0)
+        write_byte(0)
     }
-    write_byte(g_eSettings[SETTING_BEAM_ALPHA])
+    write_byte(BEAM_ALPHA)
     write_byte(0)
     message_end()
 }
@@ -1899,9 +1855,9 @@ stock buySound(iEnt, iSound, iChan = CHAN_ITEM, bool:bPlayer = true, iFlags = 0,
 
     switch( iSound )
     {
-        case SOUND_MENU_NAV:    copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_MENU_NAV])
-        case SOUND_MENU_REMOVE: copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_MENU_REMOVE])
-        case SOUND_MENU_ALERT:  copy(szSample, charsmax(szSample), g_eSettings[SETTING_SOUND_MENU_ALERT])
+        case SOUND_MENU_NAV:    copy(szSample, charsmax(szSample), SOUND_NAV)
+        case SOUND_MENU_REMOVE: copy(szSample, charsmax(szSample), SOUND_REMOVE)
+        case SOUND_MENU_ALERT:  copy(szSample, charsmax(szSample), SOUND_ALERT)
     }
 
     if ( bPlayer )
@@ -1957,60 +1913,81 @@ stock buyKill(iEnt)
         set_pev(iEnt, pev_flags, pev(iEnt, pev_flags) | FL_KILLME)
 }
 
-stock parseSetting(iType, szKey[], iKeyLen, szValue[], iValueLen, any:output[], iOutputLen, const any:fallback[] = {0.0, 0.0})
+stock parseSetting(iType, szValue[], iValueLen, any:aOutput[], iOutputLength)
 {
     switch ( iType )
     {
-        case DTYPE_FLOAT_RANGE:
+        case DTYPE_INT:
         {
-            strtok(szValue, szKey, iKeyLen, szValue, iValueLen, ' ')
-            output[0] = str_to_float(szKey)
-            output[1] = str_to_float(szValue)
+            new szTok[MAX_VALUE_LENGTH], szTmp[MAX_VALUE_LENGTH], iCounter
+            copy(szTmp, charsmax(szTmp), szValue)
 
-            if ( output[0] < 0.0 ) output[0] = fallback[0]
-            if ( output[1] < 0.0 ) output[1] = fallback[1]
+            strtok(szTmp, szTok, charsmax(szTok), szTmp, charsmax(szTmp), ' ')
+            trim(szTok)
+            while ( szTok[0] )
+            {
+                aOutput[iCounter ++] = str_to_num(szTok)
+
+                strtok(szTmp, szTok, charsmax(szTok), szTmp, charsmax(szTmp), ' ')
+                trim(szTok)
+            }
         }
         case DTYPE_FLOAT:
         {
-            output[0] = str_to_float(szValue)
-            if ( output[0] < 0.0 ) output[0] = fallback[0]
-        }
-        case DTYPE_INT:
-        {
-            output[0] = str_to_num(szValue)
-            if ( output[0] < 0 ) output[0] = fallback[0]
-        }
-        case DTYPE_BOOL:
-        {
-            output[0] = bool:str_to_num(szValue)
+            new szTok[MAX_VALUE_LENGTH], szTmp[MAX_VALUE_LENGTH], iCounter
+            copy(szTmp, charsmax(szTmp), szValue)
+
+            strtok(szTmp, szTok, charsmax(szTok), szTmp, charsmax(szTmp), ' ')
+            trim(szTok)
+            while ( szTok[0] )
+            {
+                aOutput[iCounter ++] = str_to_float(szTok)
+
+                strtok(szTmp, szTok, charsmax(szTok), szTmp, charsmax(szTmp), ' ')
+                trim(szTok)
+            }
         }
         case DTYPE_FLAGS:
         {
-            output[0] = read_flags(szValue)
-        }
-        case DTYPE_VECTOR:
-        {
-            strtok(szValue, szKey, iKeyLen, szValue, iValueLen, ' ')
-            output[0] = str_to_num(szKey)
-
-            strtok(szValue, szKey, iKeyLen, szValue, iValueLen, ' ')
-            output[1] = str_to_num(szKey)
-            output[2] = str_to_num(szValue)
+            aOutput[0] = read_flags(szValue)
         }
         case DTYPE_STRING_MODEL:
         {
-            copy(output, iOutputLen, szValue)
+            copy(aOutput, iOutputLength, szValue)
             if ( !g_bFileWasRead ) precache_model(szValue)
         }
         case DTYPE_STRING_SOUND:
         {
-            copy(output, iOutputLen, szValue)
+            copy(aOutput, iOutputLength, szValue)
             if ( !g_bFileWasRead ) precache_sound(szValue)
         }
-        case DTYPE_STRING_SPRITE:
+        case DTYPE_ARRAY_MESSAGE:
+        {
+            replace_all(szValue, iValueLen, "^"", " ")
+            replace_all(szValue, iValueLen, "^^n", "^n")
+            ArrayPushString(aOutput[0], szValue)
+        }
+        case DTYPE_ARRAY_MODEL:
         {
             if ( !g_bFileWasRead )
-                output[0] = precache_model(szValue)
+                precache_model(szValue)
+
+            ArrayPushString(aOutput[0], szValue)
+        }
+        case DTYPE_ARRAY_SOUND:
+        {
+            ArrayPushString(aOutput[0], szValue)
+            if ( !g_bFileWasRead ) precache_sound(szValue)
+        }
+        case DTYPE_STRING_MODEL_ID:
+        {
+            if ( !g_bFileWasRead )
+                aOutput[0] = precache_model(szValue)
+        }
+        case DTYPE_ARRAY_MODEL_ID:
+        {
+            if ( !g_bFileWasRead )
+                ArrayPushCell(aOutput[0], precache_model(szValue))
         }
     }
 }
@@ -2021,4 +1998,16 @@ stock LogConfigError(const iLine, const szText[], any:...)
     vformat(szError, charsmax(szError), szText, 3)
 
     log_to_file(ERROR_FILE, "^nLine %d: %s", iLine, szError)
+}
+
+stock EnableForward()
+{
+    EnableHamForward(g_iFwdPreThink)
+    EnableHamForward(g_iFwdKilled)
+}
+
+stock DisableForward()
+{
+    DisableHamForward(g_iFwdPreThink)
+    DisableHamForward(g_iFwdKilled)
 }
