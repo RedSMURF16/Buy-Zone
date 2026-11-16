@@ -14,7 +14,6 @@ Custom setups are saved per map and automatically loaded on every map start.
 - Independent axis scaling with an Add/Remove mode toggle and factor control for precise box resizing
 - Noclip for players while placing buy zones, for easier and more accurate positioning
 - Optional toggle to disable default map buy zones in favor of fully custom ones
-- [color=red]Requires AMX Mod X 1.9.0+[/color]
 
 ## 💬 Commands
 - `say /bz` - Opens the Buy Zone menu.
@@ -51,3 +50,5 @@ Custom setups are saved per map and automatically loaded on every map start.
 * v1.3: Added per-Buy Zone configuration.
 * v1.4: Added FLAG_ACTIVE_DURATION, improved round-start logic.
 ```
+
+[![Watch on YouTube](https://img.shields.io/badge/YouTube-Watch%20video-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=BLEO4hK1Oyg)
