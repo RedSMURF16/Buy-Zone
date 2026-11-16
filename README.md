@@ -15,6 +15,10 @@ Custom setups are saved per map and automatically loaded on every map start.
 - Noclip for players while placing buy zones, for easier and more accurate positioning
 - Optional toggle to disable default map buy zones in favor of fully custom ones
 
+## 📋 Requirements
+- ReGameDLL
+- AMX Mod X 1.10+
+
 ## 💬 Commands
 - `say /bz` - Opens the Buy Zone menu.
 - `say_team /bz` - Opens the Buy Zone menu.
