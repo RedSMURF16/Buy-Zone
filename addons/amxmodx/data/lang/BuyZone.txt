@@ -1,53 +1,53 @@
 [en] -- RedSMURF
-BUY_CHAT_TAG                        = ^4[BUY ZONE]^1
-BUY_CHAT_LIMIT                      = You've reached the maximum number of Buy Zones ^4%d
-BUY_CHAT_NO_BUY                     = There are no Buy Zones available
-BUY_CHAT_CREATE_NEW                 = ^3%s ^1created
-BUY_CHAT_STATUS_CURRENT             = ^3%s ^1is %L
-BUY_CHAT_STATUS_ALL_ENABLED         = All Buy Zones are now enabled
-BUY_CHAT_STATUS_ALL_DISABLED        = All Buy Zones are now disabled
-BUY_CHAT_REMOVE_CURRENT             = ^3%s ^1removed
-BUY_CHAT_REMOVE_ALL                 = All Buy Zones removed
-BUY_CHAT_SAVE                       = Buy Zones data saved in ^4%s
+BUY_CHAT_TAG                                = ^4[BUY ZONE]^1
+BUY_CHAT_LIMIT                              = You've reached the maximum number of Buy Zones ^4%d
+BUY_CHAT_NO_BUY                             = There are no Buy Zones available
+BUY_CHAT_CREATE_NEW                         = ^3Bomb Zone ^1created
+BUY_CHAT_REMOVE_CURRENT                     = ^3Bomb Zone ^1removed
+BUY_CHAT_REMOVE_ALL                         = All Buy Zones removed
+BUY_CHAT_SAVE                               = Buy Zone data saved in ^4%s
+BUY_CHAT_STATUS_CURRENT                     = ^3Bomb Zone ^1is %L
+BUY_CHAT_STATUS_ALL_ENABLED                 = All Buy Zones are now Enabled
+BUY_CHAT_STATUS_ALL_DISABLED                = All Buy Zones are now Disabled
 
-BUY_CHAT_ENABLED                    = Enabled
-BUY_CHAT_DISABLED                   = Disabled
+BUY_CHAT_ENABLED                            = Enabled
+BUY_CHAT_DISABLED                           = Disabled
 
-BUY_NAV_NEXT                        = Next
-BUY_NAV_BACK                        = Back
-BUY_ADD                             = Add
-BUY_REMOVE                          = Remove
-BUY_ON                              = \y[ON]
-BUY_OFF                             = \r[OFF]
-BUY_ENABLED                         = \y[ENABLED]
-BUY_DISABLED                        = \r[DISABLED]
-BUY_INCREASE                        = \y[INCREASE]
-BUY_DECREASE                        = \r[DECREASE]
+BUY_NAV_NEXT                                = Next
+BUY_NAV_BACK                                = Back
+BUY_ADD                                     = Add
+BUY_REMOVE                                  = Remove
+BUY_ON                                      = \y[ON]
+BUY_OFF                                     = \r[OFF]
+BUY_ENABLED                                 = \y[ENABLED]
+BUY_DISABLED                                = \r[DISABLED]
+BUY_INCREASE                                = \y[INCREASE]
+BUY_DECREASE                                = \r[DECREASE]
 
-BUY_MENU_TITLE                      = \dBuy Zone - Version \y%s
-BUY_MENU_TITLE_PAGE                 = \yPage:\r
+BUY_MENU_TITLE                              = \dBomb Zone - Version \y%s
+BUY_MENU_TITLE_PAGE                         = \yPage:\r
 
-BUY_ROOT_CREATE                     = Create Buy Zone
-BUY_ROOT_EDIT                       = Edit Buy Zone
-BUY_ROOT_REMOVE                     = Remove Buy Zone
-BUY_ROOT_SAVE                       = Save Data
-BUY_ROOT_STATUS                     = Status Buy Zone
-BUY_ROOT_NOCLIP                     = Status noclip %L
-BUY_ROOT_GODMODE                    = Status godmode %L
-BUY_ROOT_SCALE                      = Adjust scaling
+BUY_ROOT_CREATE                             = Create Buy Zone
+BUY_ROOT_EDIT                               = Edit Buy Zone
+BUY_ROOT_REMOVE                             = Remove Buy Zone
+BUY_ROOT_SAVE                               = Save Data
+BUY_ROOT_STATUS                             = Status Buy Zone
+BUY_ROOT_NOCLIP                             = Status noclip %L
+BUY_ROOT_GODMODE                            = Status godmode %L
+BUY_ROOT_SCALE                              = Adjust scaling
 
-BUY_EDIT_STATUS                     = Edit Status
+BUY_EDIT_STATUS                             = Edit Status
 
-BUY_STATUS_CURRENT                  = Status Buy Zone >> %s%s %L
-BUY_STATUS_ALL_ENABLE               = Enable All Buy Zones
-BUY_STATUS_ALL_DISABLE              = Disable All Buy Zones
+BUY_REMOVE_CURRENT                          = Remove Buy Zone
+BUY_REMOVE_ALL                              = Remove All Buy Zones
 
-BUY_REMOVE_CURRENT                  = Remove Buy Zone >> %s%s
-BUY_REMOVE_ALL                      = Remove All Buy Zones
+BUY_STATUS_CURRENT                          = Status Buy Zone >> %L
+BUY_STATUS_ALL_ENABLE                       = Enable All Buy Zones
+BUY_STATUS_ALL_DISABLE                      = Disable All Buy Zones
 
-BUY_SCALE_HEIGHT                    = %L Height
-BUY_SCALE_WIDTH                     = %L Width
-BUY_SCALE_DEPTH                     = %L Depth
-BUY_SCALE_FACTOR                    = Scale Factor >> %sx%.2f
-BUY_SCALE_MODE                      = Scale Mode >> %L
-BUY_SCALE_PLACE                     = Place Buy Zone
+BUY_SCALE_HEIGHT                            = %L Height
+BUY_SCALE_WIDTH                             = %L Width
+BUY_SCALE_DEPTH                             = %L Depth
+BUY_SCALE_FACTOR                            = Scale Factor >> %sx%.2f
+BUY_SCALE_MODE                              = Scale Mode >> %L
+BUY_SCALE_PLACE                             = Place Buy Zone
