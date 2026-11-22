@@ -60,13 +60,11 @@
 #endif
 
 #define MAX_ENT                     32
+#define ADMIN_ACCESS                ADMIN_RCON
 #define BUY_KEY                     1824
 #define BUY_ICON_KEY                4281
 #define BUY_ICON_OWNER              pev_iuser1
 #define BUY_ARRAY_ITEM              pev_iuser1
-
-#define XO_CBASEPLAYER              5
-#define XO_CBASEPLAYERWEAPON        4
 #define BUY_CHECK                   10.0
 #define BUY_OFFSET_BASE             90.0
 #define BUY_OFFSET_MIN              42.0
@@ -79,6 +77,9 @@
 #define SIZE_WIDTH_MAX              1500.0
 #define SIZE_DEPTH_MIN              5.0
 #define SIZE_DEPTH_MAX              1500.0
+#define PDATA_NEXT_ATTACK           83
+#define XO_CBASEPLAYER              5
+#define XO_CBASEPLAYERWEAPON        4
 #define SOUND_NAV                   "buttons/blip1.wav"
 #define SOUND_REMOVE                "buttons/button10.wav"
 #define SOUND_ALERT                 "buttons/bell1.wav"
@@ -86,8 +87,8 @@
 #define BEAM_ALPHA                  255
 #define BEAM_SPRITE                 "sprites/white.spr"
 
-new const PLUGIN_VERSION[]       = "1.4"
-new const Float:DELAY_ON_LOAD       = 2.0
+new const PLUGIN_VERSION[]       = "1.5"
+new const Float:DELAY_ON_LOAD    = 2.0
 new const ERROR_FILE[]           = "BuyZone_ERRORS.log"
 
 enum
@@ -119,13 +120,10 @@ enum
 
 enum
 {
-    FLAG_RADAR              = (1 << 0),
-    FLAG_ICON               = (1 << 1),
-    FLAG_ACTIVE_DELAY       = (1 << 2),
-    FLAG_ACTIVE_DURATION    = (1 << 3),
+    FLAG_ICON               = (1 << 0),
 
-    FLAG_SELECT             = (1 << 4),
-    FLAG_ACTIVE             = (1 << 5)
+    FLAG_SELECT             = (1 << 1),
+    FLAG_ACTIVE             = (1 << 2)
 }
 
 enum
@@ -143,24 +141,26 @@ enum
     SOUND_MENU_ALERT
 }
 
+enum
+{
+    TARGET_GHOST,
+    TARGET_SELECT,
+    TARGET_HIDE,
+    TARGET_CLEAR
+}
+
 enum _:MAIN_SETTINGS
 {
+    SETTING_DEFAULT_SPRITE_ICON[MAX_RESOURCE_PATH_LENGTH],
     SETTING_DEFAULT_FLAGS,
     SETTING_DEFAULT_RADAR,
     SETTING_DEFAULT_TEAM,
-    Float:SETTING_DEFAULT_ACTIVE_CHANCE,
-    Float:SETTING_DEFAULT_ACTIVE_DELAY[2],
-    Float:SETTING_DEFAULT_ACTIVE_DURATION[2],
-    Float:SETTING_DEFAULT_ACTIVE_COOLDOWN[2],
     Float:SETTING_DEFAULT_ICON_SCALE,
-    SETTING_DEFAULT_ICON_ALPHA,
-    SETTING_DEFAULT_ICON_SPRITE[MAX_RESOURCE_PATH_LENGTH],
+    Float:SETTING_DEFAULT_ICON_ALPHA,
 
     bool:SETTING_BUY_LOAD,
-    bool:SETTING_BUY_DEFAULT,
-
-    SETTING_COLOR_ACTIVE[3],
-    SETTING_COLOR_INACTIVE[3]
+    Float:SETTING_BUY_TASK,
+    bool:SETTING_BUY_DEFAULT
 }
 
 enum _:BUY
@@ -170,15 +170,7 @@ enum _:BUY
     BUY_FLAGS,
     BUY_TEAM,
     BUY_RADAR,
-    Float:BUY_ACTIVE_CHANCE,
-    Float:BUY_ACTIVE_DELAY[2],
-    Float:BUY_ACTIVE_DURATION[2],
-    Float:BUY_ACTIVE_COOLDOWN[2],
-
     BUY_ICON,
-    Float:BUY_ICON_SCALE,
-    BUY_ICON_ALPHA,
-    BUY_ICON_SPRITE[MAX_RESOURCE_PATH_LENGTH],
     BUY_NAME[MAX_VALUE_LENGTH],
 
     Float:BUY_SCALE[3],
@@ -186,9 +178,7 @@ enum _:BUY
     Float:BUY_CORNERS[24],
     Float:BUY_MINS[3],
     Float:BUY_MAXS[3],
-    Float:BUY_NEXT_RADAR,
-    Float:BUY_NEXT_ENABLE,
-    Float:BUY_NEXT_DISABLE
+    Float:BUY_NEXT_RADAR
 }
 
 enum _:PLAYER_DATA
@@ -210,15 +200,16 @@ enum
 {
     MENU_ROOT,
     MENU_CREATE,
-    MENU_STATUS,
+    MENU_EDIT,
     MENU_REMOVE,
+    MENU_STATUS,
     MENU_SCALE
 }
 
 enum
 {
     ROOT_CREATE,
-    ROOT_STATUS,
+    ROOT_EDIT,
     ROOT_REMOVE,
     ROOT_SAVE,
 
@@ -228,13 +219,36 @@ enum
 
 enum
 {
+    EDIT_STATUS
+}
+
+enum
+{
+    REMOVE_NEXT,
+    REMOVE_BACK,
+
+    REMOVE_CURRENT = 3,
+    REMOVE_ALL
+}
+
+enum
+{
     STATUS_NEXT,
     STATUS_BACK,
 
     STATUS_CURRENT = 3,
     STATUS_ALL_ENABLE,
-    STATUS_ALL_DISABLE,
-    STATUS_ALL_DEFAULT
+    STATUS_ALL_DISABLE
+}
+
+enum
+{
+    STATUS_NEXT,
+    STATUS_BACK,
+
+    STATUS_CURRENT = 3,
+    STATUS_ALL_ENABLE,
+    STATUS_ALL_DISABLE
 }
 
 enum
@@ -267,12 +281,13 @@ new Float:g_fDirections[][] =
     {0.0, 0.0, 1.0}
 }
 
-new g_szMenuHandler[][] =
+new g_szMenuHandler[][MAX_VALUE_LENGTH] =
 {
     "menuHandlerRoot",
     "menuHandlerCreate",
-    "menuHandlerStatus",
+    "menuHandlerEdit",
     "menuHandlerRemove",
+    "menuHandlerStatus",
     "menuHandlerScale"
 }
 
@@ -283,18 +298,16 @@ new Array:g_aBuy,
     Array:g_aBuyConfig,
     g_eSettings[MAIN_SETTINGS],
     g_ePlayerData[MAX_PLAYERS + 1][PLAYER_DATA],
-    bool:g_bFileWasRead = false,
-    g_iBuy, g_iBuyConfig,
-    g_iBombDrop, g_iHostagePos, g_iHostageK, g_iStatusIcon,
+    bool:g_bFileWasRead = false, g_iActivePlayers,
+    HamHook:g_iFwdPreThink, HamHook:g_iFwdKilled,
+    g_iBuy, g_iBuyConfig, g_iBeam,
+    g_iBuyDrop, g_iHostagePos, g_iHostageK, g_iStatusIcon,
     g_iMaxPlayers
-
-new g_iBeam
-
-new HamHook:g_iFwdPreThink, HamHook:g_iFwdKilled, g_iActivePlayers
 
 public plugin_init()
 {
     register_plugin("Buy Zone", PLUGIN_VERSION, "RedSMURF")
+    register_cvar("RedSMURF_BuyZone", PLUGIN_VERSION, ADMIN_ACCESS)
 
     register_clcmd("buy", "cmdBuy")
     register_clcmd("say /bz",           "cmdMenu", ADMIN_RCON, "-- Opens the Buy Zone menu.")
@@ -306,25 +319,20 @@ public plugin_init()
 
     register_dictionary("BuyZone.txt")
 
-    register_forward(FM_UpdateClientData, "fwdUpdateClientData", 1)
-    register_forward(FM_AddToFullPack, "fwdAddToFullPack", 1)
-    RegisterHam(Ham_Spawn, "func_buyzone", "fwdSpawn", 1)
-    RegisterHam(Ham_Spawn, "env_sprite", "fwdSpawn", 1)
     g_iFwdPreThink = RegisterHam(Ham_Player_PreThink, "player", "fwdPreThink")
     g_iFwdKilled = RegisterHam(Ham_Killed, "player", "fwdKilled", 1)
-
+    register_logevent("eventRoundStart", 2, "1=Round_Start")
     register_event("StatusIcon", "eventStatusIconHide", "bef", "1=0", "2=buyzone")
     register_event("StatusIcon", "eventStatusIconDraw", "bef", "1=1", "2=buyzone")
-    g_iBombDrop = get_user_msgid("BombDrop")
+    g_iBuyDrop = get_user_msgid("BombDrop")
     g_iHostagePos = get_user_msgid("HostagePos")
     g_iHostageK = get_user_msgid("HostageK")
     g_iStatusIcon = get_user_msgid("StatusIcon")
     g_iMaxPlayers = get_maxplayers()
-
-    register_logevent("eventRoundStart", 2, "1=Round_Start")
     DisableForward()
-    set_task(0.1, "buyTask", .flags = "b")
+
     buyInit()
+    g_iMaxPlayers = get_maxplayers()
 }
 
 public plugin_precache()
@@ -376,31 +384,7 @@ public cmdReload(id, iLevel, iCmd)
 
 public eventRoundStart()
 {
-    if ( !g_iBuy )
-        return PLUGIN_HANDLED
-
-    new eBuy[BUY], Float:fCurrentTime
-    fCurrentTime = get_gametime()
-
-    for ( new i = 0; i < g_iBuy; i ++ )
-    {
-        ArrayGetArray(g_aBuy, i, eBuy)
-        if ( !(eBuy[BUY_FLAGS] & FLAG_ACTIVE) )
-            continue
-
-        buyReset(eBuy)
-        if ( eBuy[BUY_ACTIVE_CHANCE] >= random_float(0.0, 1.0) )
-        {
-            if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DELAY )
-                eBuy[BUY_NEXT_ENABLE] = fCurrentTime + random_float(eBuy[BUY_ACTIVE_DELAY][0], eBuy[BUY_ACTIVE_DELAY][1])
-            else
-                eBuy[BUY_FLAGS] |= FLAG_ACTIVE
-        }
-
-        ArraySetArray(g_aBuy, i, eBuy)
-    }
-
-    return PLUGIN_HANDLED
+    buyReset()
 }
 
 public eventStatusIconHide(id)
@@ -425,8 +409,19 @@ ReadFile()
 {
     if ( g_bFileWasRead )
     {
-        for ( new id = 1; id <= g_iMaxPlayers; id ++ )
-            if ( is_user_connected(id))
+        ArrayClear(g_aBuyConfig)
+        g_iBuyConfig = 0
+    }
+
+    new g_szFileName[MAX_RESOURCE_PATH_LENGTH]
+    get_configsdir(g_szFileName, charsmax(g_szFileName))
+    add(g_szFileName, charsmax(g_szFileName), "/BuyZone.ini")
+
+    new iFile
+    iFile = fopen(g_szFileName, "rt")
+
+    if ( !iFile )
+    {
         set_fail_state("An error occured during the opening of the configuration file !")
     }
 
@@ -466,19 +461,9 @@ ReadFile()
                             ArrayPushArray(g_aBuyConfig, eBuy)
 
                         copy(eBuy[BUY_NAME], charsmax(eBuy[BUY_NAME]), szData)
-                        copy(eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]), g_eSettings[SETTING_DEFAULT_ICON_SPRITE])
                         eBuy[BUY_FLAGS]               = g_eSettings[SETTING_DEFAULT_FLAGS]
                         eBuy[BUY_TEAM]                = g_eSettings[SETTING_DEFAULT_TEAM]
                         eBuy[BUY_RADAR]               = g_eSettings[SETTING_DEFAULT_RADAR]
-                        eBuy[BUY_ACTIVE_CHANCE]       = g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE]
-                        eBuy[BUY_ACTIVE_DELAY][0]     = g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY][0]
-                        eBuy[BUY_ACTIVE_DELAY][1]     = g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY][1]
-                        eBuy[BUY_ACTIVE_DURATION][0]  = g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION][0]
-                        eBuy[BUY_ACTIVE_DURATION][1]  = g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION][1]
-                        eBuy[BUY_ACTIVE_COOLDOWN][0]  = g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN][0]
-                        eBuy[BUY_ACTIVE_COOLDOWN][1]  = g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN][1]
-                        eBuy[BUY_ICON_SCALE]          = g_eSettings[SETTING_DEFAULT_ICON_SCALE]
-                        eBuy[BUY_ICON_ALPHA]          = g_eSettings[SETTING_DEFAULT_ICON_ALPHA]
 
                         iSection = SECTION_BUY
                         g_iBuyConfig ++
@@ -522,28 +507,16 @@ ReadFile()
                             parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_TEAM], charsmax(g_eSettings[SETTING_DEFAULT_TEAM]))
                         else if ( equali(szKey, "SETTING_DEFAULT_RADAR") )
                             parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_RADAR], charsmax(g_eSettings[SETTING_DEFAULT_RADAR]))
-                        else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_CHANCE") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_CHANCE]))
-                        else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_DELAY") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_DELAY]))
-                        else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_DURATION") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_DURATION]))
-                        else if ( equali(szKey, "SETTING_DEFAULT_ACTIVE_COOLDOWN") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN], charsmax(g_eSettings[SETTING_DEFAULT_ACTIVE_COOLDOWN]))
-                        else if ( equali(szKey, "SETTING_DEFAULT_ICON_SPRITE") )
-                            parseSetting(DTYPE_STRING_MODEL, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_SPRITE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SPRITE]))
+                        else if ( equali(szKey, "SETTING_DEFAULT_SPRITE_ICON") )
+                            parseSetting(DTYPE_STRING_MODEL, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_SPRITE_ICON], charsmax(g_eSettings[SETTING_DEFAULT_SPRITE_ICON]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ICON_SCALE") )
                             parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_SCALE], charsmax(g_eSettings[SETTING_DEFAULT_ICON_SCALE]))
                         else if ( equali(szKey, "SETTING_DEFAULT_ICON_ALPHA") )
-                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_ALPHA], charsmax(g_eSettings[SETTING_DEFAULT_ICON_ALPHA]))
+                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), g_eSettings[SETTING_DEFAULT_ICON_ALPHA], charsmax(g_eSettings[SETTING_DEFAULT_ICON_ALPHA]))
                         else if ( equali(szKey, "SETTING_BUY_LOAD") )
                             parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_BUY_LOAD], charsmax(g_eSettings[SETTING_BUY_LOAD]))
                         else if ( equali(szKey, "SETTING_BUY_DEFAULT") )
                             parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_BUY_DEFAULT], charsmax(g_eSettings[SETTING_BUY_DEFAULT]))
-                        else if ( equali(szKey, "SETTING_COLOR_ACTIVE") )
-                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_COLOR_ACTIVE], charsmax(g_eSettings[SETTING_COLOR_ACTIVE]))
-                        else if ( equali(szKey, "SETTING_COLOR_INACTIVE") )
-                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), g_eSettings[SETTING_COLOR_INACTIVE], charsmax(g_eSettings[SETTING_COLOR_INACTIVE]))
                     }
                     case SECTION_BUY:
                     {
@@ -553,20 +526,6 @@ ReadFile()
                             parseSetting(DTYPE_INT, szValue, charsmax(szValue), eBuy[BUY_RADAR], charsmax(eBuy[BUY_RADAR]))
                         else if ( equali(szKey, "BUY_TEAM") )
                             parseSetting(DTYPE_INT, szValue, charsmax(szValue), eBuy[BUY_TEAM], charsmax(eBuy[BUY_TEAM]))
-                        else if ( equali(szKey, "BUY_ACTIVE_CHANCE") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_CHANCE], charsmax(eBuy[BUY_ACTIVE_CHANCE]))
-                        else if ( equali(szKey, "BUY_ACTIVE_DELAY") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_DELAY], charsmax(eBuy[BUY_ACTIVE_DELAY]))
-                        else if ( equali(szKey, "BUY_ACTIVE_DURATION") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_DURATION], charsmax(eBuy[BUY_ACTIVE_DURATION]))
-                        else if ( equali(szKey, "BUY_ACTIVE_COOLDOWN") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ACTIVE_COOLDOWN], charsmax(eBuy[BUY_ACTIVE_COOLDOWN]))
-                        else if ( equali(szKey, "BUY_ICON_SCALE") )
-                            parseSetting(DTYPE_FLOAT, szValue, charsmax(szValue), eBuy[BUY_ICON_SCALE], charsmax(eBuy[BUY_ICON_SCALE]))
-                        else if ( equali(szKey, "BUY_ICON_ALPHA") )
-                            parseSetting(DTYPE_INT, szValue, charsmax(szValue), eBuy[BUY_ICON_ALPHA], charsmax(eBuy[BUY_ICON_ALPHA]))
-                        else if ( equali(szKey, "BUY_ICON_SPRITE") )
-                            parseSetting(DTYPE_STRING_MODEL, szValue, charsmax(szValue), eBuy[BUY_ICON_SPRITE], charsmax(eBuy[BUY_ICON_SPRITE]))
                     }
                 }
             }
@@ -588,7 +547,7 @@ public client_disconnected(id)
     if ( g_ePlayerData[id][PDATA_BUY_GHOST]
     && (iItem = buyGet(eBuy, g_ePlayerData[id][PDATA_BUY_GHOST])) != -1 )
     {
-        buyKill(eBuy[BUY_ID])
+        buyKill(eBuy)
         buyRemove(iItem)
     }
 
@@ -603,22 +562,22 @@ public buyInit()
         set_task(DELAY_ON_LOAD, "loadData")
 }
 
-public buyMenu(id, iType)
+stock buyMenu(id, iType)
 {
     if ( !is_user_connected(id) )
         return PLUGIN_HANDLED
 
-    new szData[64], iMenu
+    new szData[256], iMenu
     formatex(szData, charsmax(szData), "%L", id, "BUY_MENU_TITLE", PLUGIN_VERSION)
     iMenu = menu_create(szData, g_szMenuHandler[iType])
-
     switch( iType )
     {
-        case MENU_ROOT:   { menuRoot(id, iMenu); }
-        case MENU_CREATE: { menuCreate(id, iMenu);  format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_CREATE"); }
-        case MENU_STATUS: { menuStatus(id, iMenu);  format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_STATUS"); }
-        case MENU_REMOVE: { menuRemove(id, iMenu);  format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_REMOVE"); }
-        case MENU_SCALE:  { menuScale(id, iMenu);   format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_SCALE"); }
+        case MENU_ROOT:         { menuRoot(id, iMenu); }
+        case MENU_CREATE:       { menuCreate(id, iMenu);        format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_CREATE"); }
+        case MENU_EDIT:         { menuEdit(id, iMenu);          format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_EDIT"); }
+        case MENU_REMOVE:       { menuRemove(id, iMenu);        format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_REMOVE"); }
+        case MENU_STATUS:       { menuStatus(id, iMenu);        format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_STATUS"); }
+        case MENU_SCALE:        { menuScale(id, iMenu);         format(szData, charsmax(szData), "%s^n%L", szData, id, "BUY_ROOT_SCALE"); }
     }
 
     if ( menu_pages(iMenu) > 1 )
@@ -648,11 +607,10 @@ stock menuNav(id, iMenu)
 public menuRoot(id, iMenu)
 {
     new szItem[64]
-
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_CREATE")
-    menu_additem(iMenu, szItem )
+    menu_additem(iMenu, szItem)
 
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_STATUS")
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_EDIT")
     menu_additem(iMenu, szItem)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_REMOVE")
@@ -663,10 +621,10 @@ public menuRoot(id, iMenu)
 
     menu_addblank2(iMenu)
 
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_NOCLIP", id, get_user_noclip(id) ? "BUY_ON" : "BUY_OFF")
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_NOCLIP", id, (pev(id, pev_movetype) == MOVETYPE_NOCLIP) ? "BUY_ON" : "BUY_OFF")
     menu_additem(iMenu, szItem)
 
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_GODMODE", id, get_user_godmode(id) ? "BUY_ON" : "BUY_OFF")
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_ROOT_GODMODE", id, (pev(id, pev_takedamage) == DAMAGE_NO) ? "BUY_ON" : "BUY_OFF")
     menu_additem(iMenu, szItem)
 }
 
@@ -685,7 +643,9 @@ public menuHandlerRoot(id, menu, item)
             if ( g_iBuy >= MAX_ENT )
             {
                 client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_LIMIT", MAX_ENT)
+
                 buySound(id, SOUND_MENU_REMOVE)
+                buyMenu(id, MENU_ROOT)
             }
             else
             {
@@ -693,17 +653,19 @@ public menuHandlerRoot(id, menu, item)
                 buyMenu(id, MENU_CREATE)
             }
         }
-        case ROOT_STATUS:
+        case ROOT_EDIT:
         {
             if ( !g_iBuy )
             {
                 client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_NO_BUY")
+
                 buySound(id, SOUND_MENU_REMOVE)
+                buyMenu(id, MENU_ROOT)
             }
             else
             {
                 buySound(id, SOUND_MENU_NAV)
-                buyMenu(id, MENU_STATUS)
+                buyMenu(id, MENU_EDIT)
             }
         }
         case ROOT_REMOVE:
@@ -711,7 +673,9 @@ public menuHandlerRoot(id, menu, item)
             if ( !g_iBuy )
             {
                 client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_NO_BUY")
+
                 buySound(id, SOUND_MENU_REMOVE)
+                buyMenu(id, MENU_ROOT)
             }
             else
             {
@@ -774,15 +738,143 @@ public menuHandlerCreate(id, menu, item)
     return PLUGIN_HANDLED
 }
 
-public menuStatus(id, iMenu)
+public menuEdit(id, iMenu)
+{
+    new szItem[64]
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_EDIT_STATUS")
+    menu_additem(iMenu, szItem)
+}
+
+public menuHandlerEdit(id, menu, item)
+{
+    switch( item )
+    {
+        case EDIT_STATUS:
+        {
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_STATUS)
+        }
+        case MENU_EXIT:
+        {
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_ROOT)
+        }
+    }
+
+    menu_destroy(menu)
+    return PLUGIN_HANDLED
+}
+
+public menuRemove(id, iMenu)
 {
     new szItem[64], eBuy[BUY]
-
     menuNav(id, iMenu)
     ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_CURRENT",
-    eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "\y" : "\r", eBuy[BUY_NAME], id, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "BUY_ENABLED" : "BUY_DISABLED")
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_REMOVE_CURRENT")
+    menu_additem(iMenu, szItem)
+
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_REMOVE_ALL")
+    menu_additem(iMenu, szItem)
+
+    EnableAction(id)
+    buySelect(eBuy, TARGET_SELECT)
+    g_ePlayerData[id][PDATA_MENU_TYPE] = MENU_REMOVE
+    ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+}
+
+public menuHandlerRemove(id, menu, item)
+{
+    new eBuy[BUY]
+    ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+    if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
+    {
+        buySelect(eBuy, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? TARGET_HIDE : TARGET_GHOST)
+        ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+    }
+
+    switch( item )
+    {
+        case REMOVE_NEXT:
+        {
+            if ( g_ePlayerData[id][PDATA_BUY_MENU] >= g_iBuy - 1 )
+                g_ePlayerData[id][PDATA_BUY_MENU] = 0
+            else
+                g_ePlayerData[id][PDATA_BUY_MENU] ++
+
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_REMOVE)
+        }
+        case REMOVE_BACK:
+        {
+            if ( g_ePlayerData[id][PDATA_BUY_MENU] <= 0 )
+                g_ePlayerData[id][PDATA_BUY_MENU] = g_iBuy - 1
+            else
+                g_ePlayerData[id][PDATA_BUY_MENU] --
+
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_REMOVE)
+        }
+        case REMOVE_CURRENT:
+        {
+            eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
+            buyKill(eBuy)
+            buyRemove(g_ePlayerData[id][PDATA_BUY_MENU])
+
+            client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_REMOVE_CURRENT")
+            g_ePlayerData[id][PDATA_BUY_MENU] = 0
+
+            buySound(id, g_iBuy > 0 ? SOUND_MENU_REMOVE : SOUND_MENU_NAV)
+            buyMenu(id, g_iBuy > 0 ? MENU_REMOVE : MENU_ROOT)
+        }
+        case REMOVE_ALL:
+        {
+            while( g_iBuy )
+            {
+                ArrayGetArray(g_aBuy, 0, eBuy)
+                eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
+
+                buyKill(eBuy)
+                buyRemove(0)
+            }
+
+            client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_REMOVE_ALL")
+            g_ePlayerData[id][PDATA_BUY_MENU] = 0
+
+            buySound(id, SOUND_MENU_ALERT)
+            buyMenu(id, MENU_ROOT)
+        }
+        case MENU_EXIT:
+        {
+            if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
+            {
+                buySound(id, SOUND_MENU_NAV)
+                buyMenu(id, MENU_ROOT)
+
+                DisableAction(id)
+                g_ePlayerData[id][PDATA_BUY_MENU] = 0
+            }
+
+            g_ePlayerData[id][PDATA_MENU_TRACE] = false
+        }
+        default:
+        {
+            DisableAction(id)
+            g_ePlayerData[id][PDATA_BUY_MENU] = 0
+        }
+    }
+
+    menu_destroy(menu)
+    return PLUGIN_HANDLED
+}
+
+public menuStatus(id, iMenu)
+{
+    new szItem[64], eBuy[BUY]
+    menuNav(id, iMenu)
+    ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
+
+    formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_CURRENT", id, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "BUY_ENABLED" : "BUY_DISABLED")
     menu_additem(iMenu, szItem)
 
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_ALL_ENABLE")
@@ -791,9 +883,9 @@ public menuStatus(id, iMenu)
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_STATUS_ALL_DISABLE")
     menu_additem(iMenu, szItem)
 
-    g_ePlayerData[id][PDATA_BUY_ACTION] = true
+    EnableAction(id)
+    buySelect(eBuy, TARGET_SELECT)
     g_ePlayerData[id][PDATA_MENU_TYPE] = MENU_STATUS
-    eBuy[BUY_FLAGS] |= FLAG_SELECT
     ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
 }
 
@@ -803,7 +895,7 @@ public menuHandlerStatus(id, menu, item)
     ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
     if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
     {
-        eBuy[BUY_FLAGS] &= ~FLAG_SELECT
+        buySelect(eBuy, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? TARGET_HIDE : TARGET_GHOST)
         ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
     }
 
@@ -832,12 +924,11 @@ public menuHandlerStatus(id, menu, item)
         case STATUS_CURRENT:
         {
             eBuy[BUY_FLAGS] ^= FLAG_ACTIVE
+            iconColor(eBuy)
 
             client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_STATUS_CURRENT",
-            eBuy[BUY_NAME], id, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "BUY_CHAT_ENABLED" : "BUY_CHAT_DISABLED")
+            id, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "BUY_CHAT_ENABLED" : "BUY_CHAT_DISABLED")
             ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-
-            iconRefresh()
 
             buySound(id, SOUND_MENU_NAV)
             buyMenu(id, MENU_STATUS)
@@ -848,11 +939,10 @@ public menuHandlerStatus(id, menu, item)
             {
                 ArrayGetArray(g_aBuy, i, eBuy)
                 eBuy[BUY_FLAGS] |= FLAG_ACTIVE
+                iconColor(eBuy)
 
                 ArraySetArray(g_aBuy, i, eBuy)
             }
-
-            iconRefresh()
 
             client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_STATUS_ALL_ENABLED")
             buySound(id, SOUND_MENU_ALERT)
@@ -864,11 +954,10 @@ public menuHandlerStatus(id, menu, item)
             {
                 ArrayGetArray(g_aBuy, i, eBuy)
                 eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
+                iconColor(eBuy)
 
                 ArraySetArray(g_aBuy, i, eBuy)
             }
-
-            iconRefresh()
 
             client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_STATUS_ALL_DISABLED")
             buySound(id, SOUND_MENU_ALERT)
@@ -881,7 +970,7 @@ public menuHandlerStatus(id, menu, item)
                 buySound(id, SOUND_MENU_NAV)
                 buyMenu(id, MENU_ROOT)
 
-                g_ePlayerData[id][PDATA_BUY_ACTION] = false
+                DisableAction(id)
                 g_ePlayerData[id][PDATA_BUY_MENU] = 0
             }
 
@@ -889,113 +978,8 @@ public menuHandlerStatus(id, menu, item)
         }
         default:
         {
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
+            DisableAction(id)
             g_ePlayerData[id][PDATA_BUY_MENU] = 0
-        }
-    }
-
-    menu_destroy(menu)
-    return PLUGIN_HANDLED
-}
-
-public menuRemove(id, iMenu)
-{
-    new eBuy[BUY], szItem[64]
-
-    ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-    menuNav(id, iMenu)
-
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_REMOVE_CURRENT",
-    eBuy[BUY_FLAGS] & FLAG_ACTIVE ? "\y" : "\r", eBuy[BUY_NAME])
-    menu_additem(iMenu, szItem)
-
-    formatex(szItem, charsmax(szItem), "%L", id, "BUY_REMOVE_ALL")
-    menu_additem(iMenu, szItem)
-
-    g_ePlayerData[id][PDATA_BUY_ACTION] = true
-    g_ePlayerData[id][PDATA_MENU_TYPE] = MENU_REMOVE
-    eBuy[BUY_FLAGS] |= FLAG_SELECT
-    ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-}
-
-public menuHandlerRemove(id, menu, item)
-{
-    new eBuy[BUY]
-    ArrayGetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-    if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
-    {
-        eBuy[BUY_FLAGS] &= ~FLAG_SELECT
-        ArraySetArray(g_aBuy, g_ePlayerData[id][PDATA_BUY_MENU], eBuy)
-    }
-
-    switch( item )
-    {
-        case REMOVE_NEXT:
-        {
-            if ( g_ePlayerData[id][PDATA_BUY_MENU] >= g_iBuy - 1 )
-                g_ePlayerData[id][PDATA_BUY_MENU] = 0
-            else
-                g_ePlayerData[id][PDATA_BUY_MENU] ++
-
-            buySound(id, SOUND_MENU_NAV)
-            buyMenu(id, MENU_REMOVE)
-        }
-        case REMOVE_BACK:
-        {
-            if ( g_ePlayerData[id][PDATA_BUY_MENU] <= 0 )
-                g_ePlayerData[id][PDATA_BUY_MENU] = g_iBuy - 1
-            else
-                g_ePlayerData[id][PDATA_BUY_MENU] --
-
-            buySound(id, SOUND_MENU_NAV)
-            buyMenu(id, MENU_REMOVE)
-        }
-        case REMOVE_CURRENT:
-        {
-            buyKill(eBuy[BUY_ICON])
-            buyKill(eBuy[BUY_ID])
-            buyRemove(g_ePlayerData[id][PDATA_BUY_MENU])
-
-            client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_REMOVE_CURRENT", eBuy[BUY_NAME])
-            g_ePlayerData[id][PDATA_BUY_MENU] = 0
-
-            buySound(id, g_iBuy > 0 ? SOUND_MENU_REMOVE : SOUND_MENU_NAV)
-            buyMenu(id, g_iBuy > 0 ? MENU_REMOVE : MENU_ROOT)
-        }
-        case REMOVE_ALL:
-        {
-            while ( g_iBuy )
-            {
-                ArrayGetArray(g_aBuy, 0, eBuy)
-
-                buyKill(eBuy[BUY_ICON])
-                buyKill(eBuy[BUY_ID])
-                buyRemove(0)
-            }
-
-            client_print_color(0, 0, "%L %L", 0, "BUY_CHAT_TAG", 0, "BUY_CHAT_REMOVE_ALL")
-            g_ePlayerData[id][PDATA_BUY_MENU] = 0
-
-            buySound(id, SOUND_MENU_ALERT)
-            buyMenu(id, MENU_ROOT)
-        }
-        case MENU_EXIT:
-        {
-            if ( !g_ePlayerData[id][PDATA_MENU_TRACE] )
-            {
-                buySound(id, SOUND_MENU_NAV)
-                buyMenu(id, MENU_ROOT)
-
-                g_ePlayerData[id][PDATA_BUY_ACTION] = false
-                g_ePlayerData[id][PDATA_BUY_MENU] = 0
-            }
-
-            g_ePlayerData[id][PDATA_MENU_TRACE] = false
-        }
-        default:
-        {
-            g_ePlayerData[id][PDATA_BUY_MENU] = 0
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
         }
     }
 
@@ -1006,7 +990,6 @@ public menuHandlerRemove(id, menu, item)
 public menuScale(id, iMenu)
 {
     new szItem[64]
-
     formatex(szItem, charsmax(szItem), "%L", id, "BUY_SCALE_HEIGHT", id, g_ePlayerData[id][PDATA_SCALE_UP] ? "BUY_ADD" : "BUY_REMOVE")
     menu_additem(iMenu, szItem)
 
@@ -1037,9 +1020,6 @@ public menuHandlerScale(id, menu, item)
         return PLUGIN_HANDLED
     }
 
-    new Float:fCurrentTime
-    fCurrentTime = get_gametime()
-
     switch( item )
     {
         case SCALE_HEIGHT:
@@ -1047,13 +1027,13 @@ public menuHandlerScale(id, menu, item)
             if ( g_ePlayerData[id][PDATA_SCALE_UP] )
             {
                 eBuy[BUY_SCALE][2] += g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][2] > SIZE_HEIGHT_MAX)
-                    eBuy[BUY_SCALE][2] = SIZE_HEIGHT_MAX
-            }
+                if ( eBuy[BUY_SCALE][2] > SIZE_HEIGHT_MAX )
+                        eBuy[BUY_SCALE][2] = SIZE_HEIGHT_MAX
+                }
             else
             {
                 eBuy[BUY_SCALE][2] -= g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][2] < SIZE_HEIGHT_MIN)
+                if ( eBuy[BUY_SCALE][2] < SIZE_HEIGHT_MIN )
                     eBuy[BUY_SCALE][2] = SIZE_HEIGHT_MIN
             }
 
@@ -1066,13 +1046,13 @@ public menuHandlerScale(id, menu, item)
             if ( g_ePlayerData[id][PDATA_SCALE_UP] )
             {
                 eBuy[BUY_SCALE][0] += g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][0] > SIZE_WIDTH_MAX)
+                if ( eBuy[BUY_SCALE][0] > SIZE_WIDTH_MAX )
                     eBuy[BUY_SCALE][0] = SIZE_WIDTH_MAX
             }
             else
             {
                 eBuy[BUY_SCALE][0] -= g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][0] < SIZE_WIDTH_MIN)
+                if ( eBuy[BUY_SCALE][0] < SIZE_WIDTH_MIN )
                     eBuy[BUY_SCALE][0] = SIZE_WIDTH_MIN
             }
 
@@ -1085,13 +1065,13 @@ public menuHandlerScale(id, menu, item)
             if ( g_ePlayerData[id][PDATA_SCALE_UP] )
             {
                 eBuy[BUY_SCALE][1] += g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][1] > SIZE_DEPTH_MAX)
+                if ( eBuy[BUY_SCALE][1] > SIZE_DEPTH_MAX )
                     eBuy[BUY_SCALE][1] = SIZE_DEPTH_MAX
             }
             else
             {
                 eBuy[BUY_SCALE][1] -= g_fScaleFactor[g_ePlayerData[id][PDATA_SCALE_FACTOR]]
-                if (eBuy[BUY_SCALE][1] < SIZE_DEPTH_MIN)
+                if ( eBuy[BUY_SCALE][1] < SIZE_DEPTH_MIN )
                     eBuy[BUY_SCALE][1] = SIZE_DEPTH_MIN
             }
 
@@ -1118,38 +1098,36 @@ public menuHandlerScale(id, menu, item)
         case SCALE_PLACE:
         {
             buyTrace(eBuy, id)
+            DisableAction(id)
+            set_pdata_float(id, PDATA_NEXT_ATTACK, 0.0, XO_CBASEPLAYER, XO_CBASEPLAYER)
             g_ePlayerData[id][PDATA_BUY_GHOST] = 0
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
 
-            if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DELAY )
-                eBuy[BUY_NEXT_ENABLE] = fCurrentTime + random_float(eBuy[BUY_ACTIVE_DELAY][0], eBuy[BUY_ACTIVE_DELAY][1])
-            else
-                eBuy[BUY_FLAGS] |= FLAG_ACTIVE
-
-            eBuy[BUY_NEXT_RADAR] = fCurrentTime + 2.0
-            buySetActive(eBuy)
+            eBuy[BUY_FLAGS] |= FLAG_ACTIVE
+            buySetSize(eBuy)
             ArraySetArray(g_aBuy, iItem, eBuy)
 
-            client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_CREATE_NEW", eBuy[BUY_NAME])
+            client_print_color(id, id, "%L %L", id, "BUY_CHAT_TAG", id, "BUY_CHAT_CREATE_NEW")
             buySound(id, SOUND_MENU_NAV)
             buyMenu(id, MENU_ROOT)
         }
         case MENU_EXIT:
         {
-            buySound(id, SOUND_MENU_NAV)
-            buyMenu(id, MENU_CREATE)
-
-            buyKill(eBuy[BUY_ID])
+            buyKill(eBuy)
             buyRemove(iItem)
+            DisableAction(id)
+            set_pdata_float(id, PDATA_NEXT_ATTACK, 0.0, XO_CBASEPLAYER, XO_CBASEPLAYER)
             g_ePlayerData[id][PDATA_BUY_GHOST] = 0
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
+
+            buySound(id, SOUND_MENU_NAV)
+            buyMenu(id, MENU_ROOT)
         }
         default:
         {
-            buyKill(eBuy[BUY_ID])
+            buyKill(eBuy)
             buyRemove(iItem)
+            DisableAction(id)
+            set_pdata_float(id, PDATA_NEXT_ATTACK, 0.0, XO_CBASEPLAYER, XO_CBASEPLAYER)
             g_ePlayerData[id][PDATA_BUY_GHOST] = 0
-            g_ePlayerData[id][PDATA_BUY_ACTION] = false
         }
     }
 
@@ -1159,9 +1137,7 @@ public menuHandlerScale(id, menu, item)
 
 public buyTask()
 {
-    new eBuy[BUY], Float:fCurrentTime
-    fCurrentTime = get_gametime()
-
+    new eBuy[BUY]
     for ( new id = 1; id <= g_iMaxPlayers; id ++ )
     {
         if ( !is_user_alive(id) )
@@ -1181,77 +1157,16 @@ public buyTask()
     for ( new i = 0; i < g_iBuy; i ++ )
     {
         ArrayGetArray(g_aBuy, i, eBuy)
-
         if ( eBuy[BUY_FLAGS] & FLAG_SELECT )
             buyBeam(eBuy)
-
-        if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE )
-        {
-            if ( fCurrentTime >= eBuy[BUY_NEXT_RADAR] )
-                buyRadar(eBuy)
-
-            if ( eBuy[BUY_NEXT_DISABLE] > 0.0
-            && fCurrentTime >= eBuy[BUY_NEXT_DISABLE] )
-            {
-                eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
-                eBuy[BUY_NEXT_DISABLE] = 0.0
-                eBuy[BUY_NEXT_ENABLE] = fCurrentTime + random_float(eBuy[BUY_ACTIVE_COOLDOWN][0], eBuy[BUY_ACTIVE_COOLDOWN][1])
-                ArraySetArray(g_aBuy, i, eBuy)
-
-                iconRefresh()
-            }
-        }
-        else
-        {
-            if ( eBuy[BUY_NEXT_ENABLE] > 0.0
-            && fCurrentTime >= eBuy[BUY_NEXT_ENABLE] )
-            {
-                eBuy[BUY_FLAGS] |= FLAG_ACTIVE
-                eBuy[BUY_NEXT_ENABLE] = 0.0
-
-                if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DURATION )
-                    eBuy[BUY_NEXT_DISABLE] = fCurrentTime + random_float(eBuy[BUY_ACTIVE_DURATION][0], eBuy[BUY_ACTIVE_DURATION][1])
-
-                ArraySetArray(g_aBuy, i, eBuy)
-
-                iconRefresh()
-            }
-        }
     }
-}
-
-stock iconCreate(eBuy[BUY], Float:fOrigin[3])
-{
-    new iEnt
-    iEnt = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "env_sprite"))
-    if ( !pev_valid(iEnt) )
-        return 0
-
-    new iColor[3], szCN[32]
-    if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE ) for ( new i = 0; i < 3; i ++ ) iColor[i] = g_eSettings[SETTING_COLOR_ACTIVE][i]
-    else                                 for ( new i = 0; i < 3; i ++ ) iColor[i] = g_eSettings[SETTING_COLOR_INACTIVE][i]
-
-    formatex(szCN, charsmax(szCN), "%s_icon", g_szCN)
-    set_pev(iEnt, BUY_ICON_OWNER, eBuy[BUY_ID])
-    set_pev(iEnt, pev_impulse, BUY_ICON_KEY)
-    set_pev(iEnt, pev_classname, szCN)
-    set_pev(iEnt, pev_origin, fOrigin)
-    engfunc(EngFunc_SetModel, iEnt, eBuy[BUY_ICON_SPRITE])
-
-    set_pev(iEnt, pev_scale, eBuy[BUY_ICON_SCALE])
-    set_ent_rendering(iEnt, kRenderFxNone, 255, 255, 255, kRenderTransAdd, eBuy[BUY_ICON_ALPHA])
-
-    dllfunc(DLLFunc_Spawn, iEnt)
-    return iEnt
 }
 
 public buyCreate(id, iItem)
 {
-    new iEnt
-    iEnt = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "func_buyzone"))
-
+    new iEnt = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "func_buyzone"))
     if ( !pev_valid(iEnt) )
-        return;
+        return
 
     new eBuy[BUY]
     ArrayGetArray(g_aBuyConfig, iItem, eBuy)
@@ -1261,6 +1176,7 @@ public buyCreate(id, iItem)
     eBuy[BUY_SCALE][0] = eBuy[BUY_SCALE][1] = eBuy[BUY_SCALE][2] = SIZE_BASE
     if ( id )
     {
+        EnableAction(id)
         g_ePlayerData[id][PDATA_BUY_GHOST] = iEnt
         g_ePlayerData[id][PDATA_BUY_ACTION] = true
         g_ePlayerData[id][PDATA_SCALE_UP] = true
@@ -1268,21 +1184,48 @@ public buyCreate(id, iItem)
         g_ePlayerData[id][PDATA_OFFSET] = BUY_OFFSET_BASE
     }
 
-    set_pev(iEnt, BUY_ARRAY_ITEM, g_iBuy)
-    set_pev(iEnt, pev_impulse, BUY_KEY)
+    buySelect(eBuy, TARGET_GHOST)
     set_pev(iEnt, pev_classname, g_szCN)
+    set_pev(iEnt, pev_impulse, BUY_KEY)
+    set_pev(iEnt, BUY_ARRAY_ITEM, g_iBuy)
+    dllfunc(DLLFunc_Spawn, iEnt)
+    set_pev(iEnt, pev_solid, SOLID_NOT)
+    set_pev(iEnt, pev_movetype, MOVETYPE_FLY)
 
     ArrayPushArray(g_aBuy, eBuy)
-    g_iBuy ++
+    if ( ++ g_iBuy == 1 )
+        set_task(g_eSettings[SETTING_BUY_TASK], "buyTask", BUY_KEY, .flags = "b")
+}
 
+stock iconCreate(eBuy[BUY])
+{
+    new iEnt = engfunc(EngFunc_CreateNamedEntity, engfunc(EngFunc_AllocString, "env_sprite"))
+    if ( !pev_valid(iEnt) )
+        return 0
+
+    eBuy[BUY_ICON] = iEnt
+    set_pev(iEnt, pev_impulse, BUY_KEY)
+    set_pev(iEnt, pev_classname, g_szCN)
+    set_pev(iEnt, pev_origin, eBuy[BUY_ORIGIN])
+    engfunc(EngFunc_SetModel, iEnt, g_eSettings[SETTING_DEFAULT_SPRITE_ICON])
     dllfunc(DLLFunc_Spawn, iEnt)
+
+    iconColor(eBuy)
+    set_pev(iEnt, pev_renderfx, kRenderFxNone)
+    set_pev(iEnt, pev_rendermode, kRenderTransAdd)
+    set_pev(iEnt, pev_renderamt, eBuy[BUY_FLAGS] & FLAG_ICON ? g_eSettings[SETTING_DEFAULT_ICON_ALPHA] : 0.0)
+    set_pev(iEnt, pev_scale, g_eSettings[SETTING_DEFAULT_ICON_SCALE])
+
+    return iEnt
 }
 
 stock buyRemove(iItem)
 {
     new eBuy[BUY]
     ArrayDeleteItem(g_aBuy, iItem)
-    g_iBuy --
+
+    if ( -- g_iBuy == 0 )
+        remove_task(BUY_KEY)
 
     for ( new i = iItem; i < g_iBuy; i ++ )
     {
@@ -1433,15 +1376,14 @@ stock loadDataBuy(Float:fCorners[24], Float:fScale[3], Float:fOrigin[3], iItem, 
     for ( new i = 0; i < 24; i ++ )
         eBuy[BUY_CORNERS][i] = fCorners[i]
 
-    set_pev(eBuy[BUY_ID], pev_origin, fOrigin)
     buySetBox(eBuy)
-    buySetActive(eBuy)
+    buySetSize(eBuy)
     ArraySetArray(g_aBuy, iCount, eBuy)
 }
 
 public buyNoClip(id)
 {
-    set_user_noclip(id, !get_user_noclip(id))
+    set_pev(id, pev_movetype, pev(id, pev_movetype) == MOVETYPE_NOCLIP ? MOVETYPE_WALK : MOVETYPE_NOCLIP)
 
     buySound(id, SOUND_MENU_NAV)
     buyMenu(id, MENU_ROOT)
@@ -1449,55 +1391,10 @@ public buyNoClip(id)
 
 public buyGodMode(id)
 {
-    set_user_godmode(id, !get_user_godmode(id))
+    set_pev(id, pev_takedamage, pev(id, pev_takedamage) == DAMAGE_NO ? DAMAGE_AIM : DAMAGE_NO)
 
     buySound(id, SOUND_MENU_NAV)
     buyMenu(id, MENU_ROOT)
-}
-
-public fwdUpdateClientData(id, iSendWeapons, iHandle)
-{
-    if ( g_ePlayerData[id][PDATA_BUY_GHOST] )
-    {
-        set_cd(iHandle, CD_WeaponAnim, 0)
-        set_cd(iHandle, CD_flNextAttack, get_gametime() + 0.1)
-    }
-
-    return FMRES_IGNORED
-}
-
-public fwdAddToFullPack(es, e, iEnt, iHost, iHostFlags, iPlayer, pSet)
-{
-    if ( !pev_valid(iEnt)
-    || !isBuy(iEnt, CLASS_BUYZONE_ICON)
-    || !get_orig_retval() )
-        return FMRES_IGNORED
-
-    // new eBuy[BUY], bool:bHidden
-    // if ( buyGet(eBuy, pev(iEnt, BUY_ICON_OWNER)) != -1
-    // && eBuy[BUY_FLAGS] & FLAG_ICON )
-    // {
-    //     bHidden = !(eBuy[BUY_FLAGS] & FLAG_ACTIVE) || !(CsTeams:eBuy[BUY_TEAM] & cs_get_user_team(iHost))
-
-    //     set_es(es, ES_RenderAmt, eBuy[BUY_ICON_ALPHA])
-    //     if ( bHidden )
-    //         set_es(es, ES_RenderColor, g_eSettings[SETTING_COLOR_INACTIVE])
-    //     else
-    //         set_es(es, ES_RenderColor, g_eSettings[SETTING_COLOR_ACTIVE])
-    // }
-
-    return FMRES_IGNORED
-}
-
-public fwdSpawn(iEnt)
-{
-    if ( !isBuy(iEnt, CLASS_BUYZONE) && !isBuy(iEnt, CLASS_BUYZONE_ICON) )
-        return HAM_IGNORED
-
-    set_pev(iEnt, pev_solid, SOLID_NOT)
-    set_pev(iEnt, pev_movetype, MOVETYPE_NONE)
-
-    return HAM_IGNORED
 }
 
 public fwdKilled(id, iAttacker, bGib)
@@ -1510,7 +1407,7 @@ public fwdKilled(id, iAttacker, bGib)
 
         if ( (iItem = buyGet(eBuy, g_ePlayerData[id][PDATA_BUY_GHOST])) != -1 )
         {
-            buyKill(eBuy[BUY_ID])
+            buyKill(eBuy)
             buyRemove(iItem)
             g_ePlayerData[id][PDATA_BUY_GHOST] = 0
         }
@@ -1524,8 +1421,9 @@ public fwdPreThink(id)
     if ( !is_user_alive(id) )
         return HAM_IGNORED
 
-    new iButton
+    new iButton, Float:fCurrentTime
     iButton = pev(id, pev_button)
+    fCurrentTime = get_gametime()
 
     if ( g_ePlayerData[id][PDATA_BUY_GHOST] )
     {
@@ -1545,6 +1443,7 @@ public fwdPreThink(id)
             }
         }
 
+        set_pdata_float(id, PDATA_NEXT_ATTACK, fCurrentTime + 0.1, XO_CBASEPLAYER, XO_CBASEPLAYER)
         iButton &= ~(IN_ATTACK | IN_ATTACK2)
         set_pev(id, pev_button, iButton)
     }
@@ -1561,6 +1460,15 @@ public iconDraw(id, bool:bDraw)
     write_byte(165)
     write_byte(0)
     message_end()
+}
+
+public iconColor(eBuy[BUY])
+{
+    new Float:fRenderColor[3]
+    if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE )    { fRenderColor[0] = 0.0;      fRenderColor[1] = 255.0; fRenderColor[2] = 0.0; }
+    else                                    { fRenderColor[0] = 255.0;    fRenderColor[1] = 0.0;   fRenderColor[2] = 0.0; }
+
+    set_pev(eBuy[BUY_ICON], pev_rendercolor, fRenderColor)
 }
 
 stock iconRefresh()
@@ -1733,16 +1641,6 @@ stock buySetOffset(eBuy[BUY])
     }
 }
 
-stock buySetActive(eBuy[BUY])
-{
-    set_pev(eBuy[BUY_ID], pev_solid, SOLID_TRIGGER)
-    set_pev(eBuy[BUY_ID], pev_movetype, MOVETYPE_NONE)
-    if ( eBuy[BUY_FLAGS] & FLAG_ICON )
-        eBuy[BUY_ICON] = iconCreate(eBuy, eBuy[BUY_ORIGIN])
-
-    engfunc(EngFunc_SetSize, eBuy[BUY_ID], eBuy[BUY_MINS], eBuy[BUY_MAXS])
-}
-
 stock buyBeam(eBuy[BUY])
 {
     new Float:fCorners[8][3]
@@ -1810,7 +1708,7 @@ stock buyRadar(eBuy[BUY])
     if ( eBuy[BUY_RADAR] == TEAM_T
     || eBuy[BUY_RADAR] == TEAM_BOTH )
     {
-        message_begin(MSG_BROADCAST, g_iBombDrop)
+        message_begin(MSG_BROADCAST, g_iBuyDrop)
         write_coord_f(eBuy[BUY_ORIGIN][0])
         write_coord_f(eBuy[BUY_ORIGIN][1])
         write_coord_f(eBuy[BUY_ORIGIN][2])
@@ -1837,16 +1735,53 @@ stock buyRadar(eBuy[BUY])
     eBuy[BUY_NEXT_RADAR] = get_gametime() + 2.0
 }
 
-stock buyReset(eBuy[BUY])
+stock buyReset()
 {
-    eBuy[BUY_FLAGS] &= ~FLAG_ACTIVE
-    eBuy[BUY_NEXT_RADAR] = 0.0
-    eBuy[BUY_NEXT_ENABLE] = 0.0
+    new eBuy[BUY]
+    for ( new i = 0; i < g_iBuy; i ++ )
+    {
+        ArrayGetArray(g_aBuy, i, eBuy)
+        eBuy[BUY_NEXT_RADAR] = 0.0
+        ArraySetArray(g_aBuy, i, eBuy)
+    }
+}
 
-    if ( eBuy[BUY_FLAGS] & FLAG_ACTIVE_DURATION )
-        eBuy[BUY_NEXT_DISABLE] = get_gametime() + random_float(eBuy[BUY_ACTIVE_DURATION][0], eBuy[BUY_ACTIVE_DURATION][1])
-    else
-        eBuy[BUY_NEXT_DISABLE] = 0.0
+stock buySetSize(eBuy[BUY])
+{
+    buySelect(eBuy, TARGET_HIDE)
+    engfunc(EngFunc_SetOrigin, eBuy[BUY_ID], eBuy[BUY_ORIGIN])
+    set_pev(eBuy[BUY_ID], pev_solid, eBuy[BUY_FLAGS] & FLAG_ACTIVE ? SOLID_TRIGGER : SOLID_NOT)
+    set_pev(eBuy[BUY_ID], pev_movetype, MOVETYPE_NONE)
+
+    engfunc(EngFunc_SetSize, eBuy[BUY_ID], eBuy[BUY_MINS], eBuy[BUY_MAXS])
+    iconCreate(eBuy)
+}
+
+stock buySelect(eBuy[BUY], iAction)
+{
+    new Float:fRenderAmt
+    if ( iAction == TARGET_SELECT )
+    {
+        iconColor(eBuy)
+        fRenderAmt = g_eSettings[SETTING_DEFAULT_ICON_ALPHA]
+        eBuy[BUY_FLAGS] |= FLAG_SELECT
+    }
+    else if ( iAction == TARGET_GHOST )
+    {
+        fRenderAmt = g_eSettings[SETTING_DEFAULT_ICON_ALPHA]
+    }
+    else if ( iAction == TARGET_HIDE )
+    {
+        fRenderAmt = eBuy[BUY_FLAGS] & FLAG_ICON ? g_eSettings[SETTING_DEFAULT_ICON_ALPHA] : 0.0
+        eBuy[BUY_FLAGS] &= ~FLAG_SELECT
+    }
+    else if ( iAction == TARGET_CLEAR )
+    {
+        fRenderAmt = g_eSettings[SETTING_DEFAULT_ICON_ALPHA]
+        eBuy[BUY_FLAGS] &= ~FLAG_SELECT
+    }
+
+    set_pev(eBuy[BUY_ICON], pev_renderamt, fRenderAmt)
 }
 
 stock buySound(iEnt, iSound, iChan = CHAN_ITEM, bool:bPlayer = true, iFlags = 0, iPitch = PITCH_NORM)
@@ -1888,6 +1823,9 @@ stock bool:isBuyActive(eBuy[BUY], id)
 
 stock buyGet(eBuy[BUY], iEnt)
 {
+    if ( !isBuy(iEnt) )
+        return -1
+
     new iItem
     iItem = pev(iEnt, BUY_ARRAY_ITEM)
     if ( iItem < 0 || iItem >= g_iBuy )
@@ -1897,20 +1835,18 @@ stock buyGet(eBuy[BUY], iEnt)
     return iItem
 }
 
-stock bool:isBuy(iEnt, iClass)
+stock bool:isBuy(iEnt)
 {
-    if ( iClass == CLASS_BUYZONE )
-        return pev(iEnt, pev_impulse) == BUY_KEY
-    else if ( iClass == CLASS_BUYZONE_ICON )
-        return pev(iEnt, pev_impulse) == BUY_ICON_KEY
-
-    return false
+    return pev(iEnt, pev_impulse) == BUY_KEY
 }
 
-stock buyKill(iEnt)
+stock buyKill(eBuy[BUY])
 {
-    if (pev_valid(iEnt))
-        set_pev(iEnt, pev_flags, pev(iEnt, pev_flags) | FL_KILLME)
+    if ( pev_valid(eBuy[BUY_ID]) )
+        set_pev(eBuy[BUY_ID], pev_flags, pev(eBuy[BUY_ID], pev_flags) | FL_KILLME)
+
+    if ( pev_valid(eBuy[BUY_ICON]) )
+        set_pev(eBuy[BUY_ICON], pev_flags, pev(eBuy[BUY_ICON], pev_flags) | FL_KILLME)
 }
 
 stock parseSetting(iType, szValue[], iValueLen, any:aOutput[], iOutputLength)
@@ -1992,12 +1928,39 @@ stock parseSetting(iType, szValue[], iValueLen, any:aOutput[], iOutputLength)
     }
 }
 
-stock LogConfigError(const iLine, const szText[], any:...)
+stock EnableAction(id)
 {
-    new szError[MAX_PLATFORM_PATH_LENGTH]
-    vformat(szError, charsmax(szError), szText, 3)
+    if ( !g_ePlayerData[id][PDATA_BUY_ACTION] )
+    {
+        new eBuy[BUY]
+        for ( new i = 0; i < g_iBuy; i ++ )
+        {
+            ArrayGetArray(g_aBuy, i, eBuy)
+            buySelect(eBuy, TARGET_GHOST)
+        }
 
-    log_to_file(ERROR_FILE, "^nLine %d: %s", iLine, szError)
+        g_ePlayerData[id][PDATA_BUY_ACTION] = true
+        if ( ++ g_iActivePlayers == 1 )
+            EnableForward()
+    }
+}
+
+stock DisableAction(id)
+{
+    if ( g_ePlayerData[id][PDATA_BUY_ACTION] )
+    {
+        new eBuy[BUY]
+        for ( new i = 0; i < g_iBuy; i ++ )
+        {
+            ArrayGetArray(g_aBuy, i, eBuy)
+            buySelect(eBuy, TARGET_HIDE)
+            ArraySetArray(g_aBuy, i, eBuy)
+        }
+
+        g_ePlayerData[id][PDATA_BUY_ACTION] = false
+        if ( -- g_iActivePlayers == 0 )
+            DisableForward()
+    }
 }
 
 stock EnableForward()
@@ -2010,4 +1973,12 @@ stock DisableForward()
 {
     DisableHamForward(g_iFwdPreThink)
     DisableHamForward(g_iFwdKilled)
+}
+
+stock LogConfigError(const iLine, const szText[], any:...)
+{
+    new szError[MAX_PLATFORM_PATH_LENGTH]
+    vformat(szError, charsmax(szError), szText, 3)
+
+    log_to_file(ERROR_FILE, "^nLine %d: %s", iLine, szError)
 }
