@@ -1,7 +1,7 @@
 <h1 align="center">Buy Zone</h1>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=BLEO4hK1Oyg"><img src="https://img.youtube.com/vi/BLEO4hK1Oyg/maxresdefault.jpg" alt="Watch on YouTube" width="600"></a>
+  <img src="images/demo.gif" alt="Buy Zone">
 </p>
 
 ## 📝 Description
